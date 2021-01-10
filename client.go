@@ -1,5 +1,7 @@
 package ethtool
 
+//go:generate stringer -type=Duplex,Port -output=string.go
+
 // A Client can manipulate the ethtool netlink interface.
 type Client struct {
 	// The operating system-specific client.
@@ -16,14 +18,23 @@ func New() (*Client, error) {
 	return &Client{c: c}, nil
 }
 
+// A Request is the ethtool netlink interface request header, which is used to
+// identify an interface being queried by its index and/or name.
+type Request struct {
+	// Callers may choose to set either Index, Name, or both fields. Note that
+	// if both are set, the kernel will verify that both Index and Name are
+	// associated with the same interface. If they are not, an error will be
+	// returned.
+	Index int
+	Name  string
+}
+
 // LinkInfo contains link settings for an Ethernet interface.
 type LinkInfo struct {
 	Index int
 	Name  string
 	Port  Port
 }
-
-//go:generate stringer -type=Port -output=string.go
 
 // A Port is the port type for a LinkInfo structure.
 type Port int
@@ -40,17 +51,6 @@ const (
 	Other        Port = 0xff
 )
 
-// A Request is the ethtool netlink interface request header, which is used to
-// identify an interface being queried by its index and/or name.
-type Request struct {
-	// Callers may choose to set either Index, Name, or both fields. Note that
-	// if both are set, the kernel will verify that both Index and Name are
-	// associated with the same interface. If they are not, an error will be
-	// returned.
-	Index int
-	Name  string
-}
-
 // LinkInfos fetches LinkInfo structures for each ethtool-supported interface
 // on this system.
 func (c *Client) LinkInfos() ([]*LinkInfo, error) {
@@ -64,6 +64,48 @@ func (c *Client) LinkInfos() ([]*LinkInfo, error) {
 // returned.
 func (c *Client) LinkInfo(r Request) (*LinkInfo, error) {
 	return c.c.LinkInfo(r)
+}
+
+// LinkMode contains link mode information for an Ethernet interface.
+type LinkMode struct {
+	Index         int
+	Name          string
+	SpeedMegabits int
+	Ours, Peer    []AdvertisedLinkMode
+	Duplex        Duplex
+}
+
+// A Duplex is the link duplex type for a LinkMode structure.
+type Duplex int
+
+// Possible Duplex type values.
+const (
+	Half    Duplex = 0x00
+	Full    Duplex = 0x01
+	Unknown Duplex = 0xff
+)
+
+// An AdvertisedLinkMode is a link mode that an interface advertises it is
+// capable of using.
+type AdvertisedLinkMode struct {
+	Index int
+	Name  string
+}
+
+// LinkModes fetches LinkMode structures for each ethtool-supported interface
+// on this system.
+func (c *Client) LinkModes() ([]*LinkMode, error) {
+	return c.c.LinkModes()
+}
+
+// LinkMode fetches LinkMode data for the interface specified by the Request
+// header.
+//
+// If the requested device does not exist or is not supported by the ethtool
+// interface, an error compatible with errors.Is(err, os.ErrNotExist) will be
+// returned.
+func (c *Client) LinkMode(r Request) (*LinkMode, error) {
+	return c.c.LinkMode(r)
 }
 
 // Close cleans up the Client's resources.

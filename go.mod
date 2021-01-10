@@ -9,6 +9,6 @@ require (
 	github.com/mdlayher/genetlink v1.0.0
 	github.com/mdlayher/netlink v1.2.0
 	golang.org/x/net v0.0.0-20201224014010-6772e930b67b // indirect
-	golang.org/x/sys v0.0.0-20210110051926-789bb1bd4061
+	golang.org/x/sys v0.0.0-20210113000019-eaf3bda374d2
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 )
