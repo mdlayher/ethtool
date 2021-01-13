@@ -16,4 +16,6 @@ type client struct{}
 func newClient() (*client, error)                       { return nil, errUnsupported }
 func (c *client) LinkInfos() ([]*LinkInfo, error)       { return nil, errUnsupported }
 func (c *client) LinkInfo(_ Request) (*LinkInfo, error) { return nil, errUnsupported }
+func (c *client) LinkModes() ([]*LinkMode, error)       { return nil, errUnsupported }
+func (c *client) LinkMode(_ Request) (*LinkMode, error) { return nil, errUnsupported }
 func (c *client) Close() error                          { return errUnsupported }
