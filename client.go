@@ -1,6 +1,7 @@
 package ethtool
 
 //go:generate stringer -type=Duplex,Port -output=string.go
+//go:generate go run mklinkmodes.go
 
 // A Client can manipulate the ethtool netlink interface.
 type Client struct {
