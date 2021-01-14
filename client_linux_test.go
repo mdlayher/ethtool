@@ -282,7 +282,7 @@ func TestLinuxClientLinkModes(t *testing.T) {
 					Ours: []AdvertisedLinkMode{
 						{
 							Index: unix.ETHTOOL_LINK_MODE_FIBRE_BIT,
-							Name:  "Fibre",
+							Name:  "FIBRE",
 						},
 						{
 							Index: unix.ETHTOOL_LINK_MODE_10000baseT_Full_BIT,
