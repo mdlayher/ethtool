@@ -526,6 +526,10 @@ func testClient(t *testing.T, fn genltest.Func) *Client {
 		ID:      familyID,
 		Version: unix.ETHTOOL_GENL_VERSION,
 		Name:    unix.ETHTOOL_GENL_NAME,
+		Groups: []genetlink.MulticastGroup{{
+			ID:   1,
+			Name: unix.ETHTOOL_MCGRP_MONITOR_NAME,
+		}},
 	}
 
 	conn := genltest.Dial(genltest.ServeFamily(family, fn))

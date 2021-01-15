@@ -9,7 +9,6 @@ import (
 
 	"github.com/mdlayher/genetlink"
 	"github.com/mdlayher/netlink"
-	"github.com/mdlayher/netlink/nlenc"
 	"golang.org/x/sys/unix"
 )
 
@@ -18,8 +17,9 @@ var errBadRequest = errors.New("ethtool: Request must have Index and/or Name set
 
 // A client is the Linux implementation backing a Client.
 type client struct {
-	c      *genetlink.Conn
-	family uint16
+	c         *genetlink.Conn
+	family    uint16
+	monitorID uint32
 }
 
 // Note that some Client methods may panic if the kernel returns an unexpected
@@ -50,12 +50,25 @@ func initClient(c *genetlink.Conn) (*client, error) {
 		return nil, err
 	}
 
+	// Find the group ID for the monitor group in case we need it later.
+	var monitorID uint32
+	for _, g := range f.Groups {
+		if g.Name == unix.ETHTOOL_MCGRP_MONITOR_NAME {
+			monitorID = g.ID
+			break
+		}
+	}
+	if monitorID == 0 {
+		return nil, errors.New("ethtool: could not find monitor multicast group ID")
+	}
+
 	// TODO(mdlayher): look into what exactly the ethtool interface does with
 	// extended acknowledgements and consider setting them there.
 
 	return &client{
-		c:      c,
-		family: f.ID,
+		c:         c,
+		family:    f.ID,
+		monitorID: monitorID,
 	}, nil
 }
 
@@ -280,48 +293,11 @@ func parseLinkModes(msgs []genetlink.Message) ([]*LinkMode, error) {
 	return lms, nil
 }
 
-// parseAdvertisedLinkModes parses the compact nested attribute format for a
-// slice of AdvertisedLinkModes.
 func parseAdvertisedLinkModes(alms *[]AdvertisedLinkMode) func(*netlink.AttributeDecoder) error {
 	return func(ad *netlink.AttributeDecoder) error {
-		// Bitsets are represented as a slice of contiguous uint32 which each
-		// contain bits. By default, the mask bitset is applied to values unless
-		// we explicitly find the NOMASK flag.
-		var (
-			values, mask []uint32
-			doMask       = true
-		)
-
-		for ad.Next() {
-			switch ad.Type() {
-			case unix.ETHTOOL_A_BITSET_NOMASK:
-				doMask = false
-			case unix.ETHTOOL_A_BITSET_SIZE:
-				// Allocate N words in values/mask based on the number of
-				// significant bits returned by netlink. This allows storing the
-				// values and mask into these slices in the other attributes.
-				n := (ad.Uint32() + 31) / 32
-				values = make([]uint32, n)
-				if doMask {
-					mask = make([]uint32, n)
-				}
-			case unix.ETHTOOL_A_BITSET_VALUE:
-				ad.Do(parseBitset(&values))
-			case unix.ETHTOOL_A_BITSET_MASK:
-				ad.Do(parseBitset(&mask))
-			}
-		}
-
-		// Do a quick check for errors before making use of the slices.
-		if err := ad.Err(); err != nil {
+		values, err := newBitset(ad)
+		if err != nil {
 			return err
-		}
-
-		// Mask by default unless the caller told us not to.
-		if doMask {
-			for i := 0; i < len(values); i++ {
-				values[i] &= mask[i]
-			}
 		}
 
 		for i, v := range values {
@@ -347,24 +323,6 @@ func parseAdvertisedLinkModes(alms *[]AdvertisedLinkMode) func(*netlink.Attribut
 					})
 				}
 			}
-		}
-
-		return nil
-	}
-}
-
-// parseBitset parses a compact bitset into a preallocated slice of uint32s. The
-// slice must be preallocated with the appropriate length and capacity for the
-// length of the input data.
-func parseBitset(s *[]uint32) func([]byte) error {
-	return func(b []byte) error {
-		if len(b)/4 != len(*s) {
-			return fmt.Errorf("ethtool: cannot store %d bytes in []uint32 with length %d",
-				len(b), len(*s))
-		}
-
-		for i := 0; i < len(*s); i++ {
-			(*s)[i] = nlenc.Uint32(b[i*4 : (i*4)+4])
 		}
 
 		return nil
