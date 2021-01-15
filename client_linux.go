@@ -284,35 +284,87 @@ func parseLinkModes(msgs []genetlink.Message) ([]*LinkMode, error) {
 // slice of AdvertisedLinkModes.
 func parseAdvertisedLinkModes(alms *[]AdvertisedLinkMode) func(*netlink.AttributeDecoder) error {
 	return func(ad *netlink.AttributeDecoder) error {
-		// Begin iterating the outer netlink array by its values.
-		var values, mask bitfield32
+		// Bitsets are represented as a slice of contiguous uint32 which each
+		// contain bits. By default, the mask bitset is applied to values unless
+		// we explicitly find the NOMASK flag.
+		var (
+			values, mask []uint32
+			doMask       = true
+		)
+
 		for ad.Next() {
 			switch ad.Type() {
+			case unix.ETHTOOL_A_BITSET_NOMASK:
+				doMask = false
 			case unix.ETHTOOL_A_BITSET_SIZE:
-				// TODO(mdlayher): consider capping the number of valid bits or
-				// similar based on what the kernel tells us here.
+				// Allocate N words in values/mask based on the number of
+				// significant bits returned by netlink. This allows storing the
+				// values and mask into these slices in the other attributes.
+				n := (ad.Uint32() + 31) / 32
+				values = make([]uint32, n)
+				if doMask {
+					mask = make([]uint32, n)
+				}
 			case unix.ETHTOOL_A_BITSET_VALUE:
-				ad.Do(parseBitfield32(&values))
+				ad.Do(parseBitset(&values))
 			case unix.ETHTOOL_A_BITSET_MASK:
-				ad.Do(parseBitfield32(&mask))
+				ad.Do(parseBitset(&mask))
 			}
 		}
 
-		// Do a quick check for errors before making use of the bitfield32s.
+		// Do a quick check for errors before making use of the slices.
 		if err := ad.Err(); err != nil {
 			return err
 		}
 
-		// Only apply modes which exist after the mask is applied. Bits in the
-		// values bitmap will match link mode bits from linkModes.
-		values.Value &= mask.Value
-		for _, m := range linkModes {
-			if values.Value&(1<<m.bit) != 0 {
-				*alms = append(*alms, AdvertisedLinkMode{
-					Index: int(m.bit),
-					Name:  m.str,
-				})
+		// Mask by default unless the caller told us not to.
+		if doMask {
+			for i := 0; i < len(values); i++ {
+				values[i] &= mask[i]
 			}
+		}
+
+		for i, v := range values {
+			if v == 0 {
+				// No bits set, don't bother checking.
+				continue
+			}
+
+			// Test each bit to find which ones are set, and use that to look up
+			// the proper index in linkModes (accounting for the offset of 32
+			// for each value in the array) so we can find the correct link mode
+			// to attach. Note that the lookup assumes that there will never be
+			// any skipped bits in the linkModes table.
+			//
+			// Thanks 0x0f10, c_h_lunde, TheCi, and Wacholderbaer from Twitch
+			// chat for saving me from myself!
+			for j := 0; j < 32; j++ {
+				if v&(1<<j) != 0 {
+					m := linkModes[(32*i)+j]
+					*alms = append(*alms, AdvertisedLinkMode{
+						Index: int(m.bit),
+						Name:  m.str,
+					})
+				}
+			}
+		}
+
+		return nil
+	}
+}
+
+// parseBitset parses a compact bitset into a preallocated slice of uint32s. The
+// slice must be preallocated with the appropriate length and capacity for the
+// length of the input data.
+func parseBitset(s *[]uint32) func([]byte) error {
+	return func(b []byte) error {
+		if len(b)/4 != len(*s) {
+			return fmt.Errorf("ethtool: cannot store %d bytes in []uint32 with length %d",
+				len(b), len(*s))
+		}
+
+		for i := 0; i < len(*s); i++ {
+			(*s)[i] = nlenc.Uint32(b[i*4 : (i*4)+4])
 		}
 
 		return nil
@@ -331,28 +383,6 @@ func parseHeader(index *int, name *string) func(*netlink.AttributeDecoder) error
 				*name = ad.String()
 			}
 		}
-		return nil
-	}
-}
-
-// TODO(mdlayher): consider moving this with convenience methods to package
-// netlink.
-
-// A bitfield32 is a NLA_BITFIELD32 structure.
-type bitfield32 struct {
-	Value, Selector uint32
-}
-
-// parseBitfield32 parses a bitfield32 structure from raw bytes.
-func parseBitfield32(bf *bitfield32) func([]byte) error {
-	return func(b []byte) error {
-		// TODO(mdlayher): what are the last 4 bytes? Netlink padding?
-		if len(b) != 12 {
-			return errors.New("bitfield32 must contain exactly 12 bytes")
-		}
-
-		bf.Value = nlenc.Uint32(b[0:4])
-		bf.Selector = nlenc.Uint32(b[4:8])
 		return nil
 	}
 }

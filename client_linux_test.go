@@ -11,7 +11,6 @@ import (
 	"github.com/mdlayher/genetlink"
 	"github.com/mdlayher/genetlink/genltest"
 	"github.com/mdlayher/netlink"
-	"github.com/mdlayher/netlink/nlenc"
 	"golang.org/x/sys/unix"
 )
 
@@ -472,8 +471,8 @@ func encodeLinkMode(t *testing.T, lm LinkMode) genetlink.Message {
 
 			packALMs := func(typ uint16, alms []AdvertisedLinkMode) {
 				ae.Nested(typ, func(nae *netlink.AttributeEncoder) error {
-					// TODO(mdlayher): set bitset size attributes when necessary.
-					fn := packBitfield32(alms)
+					fn := packALMBitset(alms)
+					nae.Uint32(unix.ETHTOOL_A_BITSET_SIZE, uint32(len(linkModes)))
 					nae.Do(unix.ETHTOOL_A_BITSET_VALUE, fn)
 					nae.Do(unix.ETHTOOL_A_BITSET_MASK, fn)
 					return nil
@@ -488,17 +487,18 @@ func encodeLinkMode(t *testing.T, lm LinkMode) genetlink.Message {
 	}
 }
 
-func packBitfield32(alms []AdvertisedLinkMode) func() ([]byte, error) {
+func packALMBitset(alms []AdvertisedLinkMode) func() ([]byte, error) {
 	return func() ([]byte, error) {
-		b := make([]byte, 12)
+		// Calculate the number of words necessary for the bitset, then
+		// multiply by 4 for bytes.
+		b := make([]byte, ((len(linkModes)+31)/32)*4)
 
-		var values uint32
 		for _, alm := range alms {
-			values |= 1 << uint32(alm.Index)
+			byteIndex := alm.Index / 8
+			bitIndex := alm.Index % 8
+			b[byteIndex] |= 1 << bitIndex
 		}
 
-		// TODO(mdlayher): pack Selector when needed.
-		nlenc.PutUint32(b[0:4], values)
 		return b, nil
 	}
 }

@@ -35,7 +35,7 @@ package ethtool
 
 import "golang.org/x/sys/unix"
 
-var linkModes = []struct{
+var linkModes = [...]struct{
 	bit uint32
 	str string
 }{`)
