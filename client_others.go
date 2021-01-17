@@ -13,9 +13,11 @@ var errUnsupported = fmt.Errorf("ethtool: this library is not supported on %s/%s
 
 type client struct{}
 
-func newClient() (*client, error)                       { return nil, errUnsupported }
-func (c *client) LinkInfos() ([]*LinkInfo, error)       { return nil, errUnsupported }
-func (c *client) LinkInfo(_ Request) (*LinkInfo, error) { return nil, errUnsupported }
-func (c *client) LinkModes() ([]*LinkMode, error)       { return nil, errUnsupported }
-func (c *client) LinkMode(_ Request) (*LinkMode, error) { return nil, errUnsupported }
-func (c *client) Close() error                          { return errUnsupported }
+func newClient() (*client, error)                         { return nil, errUnsupported }
+func (c *client) LinkInfos() ([]*LinkInfo, error)         { return nil, errUnsupported }
+func (c *client) LinkInfo(_ Request) (*LinkInfo, error)   { return nil, errUnsupported }
+func (c *client) LinkModes() ([]*LinkMode, error)         { return nil, errUnsupported }
+func (c *client) LinkMode(_ Request) (*LinkMode, error)   { return nil, errUnsupported }
+func (c *client) WakeOnLANs() ([]*WakeOnLAN, error)       { return nil, errUnsupported }
+func (c *client) WakeOnLAN(_ Request) (*WakeOnLAN, error) { return nil, errUnsupported }
+func (c *client) Close() error                            { return errUnsupported }
