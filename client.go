@@ -1,5 +1,7 @@
 package ethtool
 
+import "fmt"
+
 //go:generate stringer -type=Duplex,Port -output=string.go
 //go:generate go run mklinkmodes.go
 
@@ -107,6 +109,89 @@ func (c *Client) LinkModes() ([]*LinkMode, error) {
 // returned.
 func (c *Client) LinkMode(r Request) (*LinkMode, error) {
 	return c.c.LinkMode(r)
+}
+
+// A WakeOnLAN contains the Wake-on-LAN parameters for an interface.
+type WakeOnLAN struct {
+	Index int
+	Name  string
+	Modes WOLMode
+}
+
+// A WOLMode is a Wake-on-LAN mode bitmask of mode(s) supported by an interface.
+type WOLMode int
+
+// Possible Wake-on-LAN mode bit flags.
+const (
+	PHY         WOLMode = 1 << 0
+	Unicast     WOLMode = 1 << 1
+	Multicast   WOLMode = 1 << 2
+	Broadcast   WOLMode = 1 << 3
+	ARP         WOLMode = 1 << 4
+	Magic       WOLMode = 1 << 5
+	MagicSecure WOLMode = 1 << 6
+	Filter      WOLMode = 1 << 7
+)
+
+// String returns the string representation of a WOLMode bitmask.
+func (m WOLMode) String() string {
+	names := []string{
+		"PHY",
+		"Unicast",
+		"Multicast",
+		"Broadcast",
+		"ARP",
+		"Magic",
+		"MagicSecure",
+		"Filter",
+	}
+
+	var s string
+	left := uint(m)
+	for i, name := range names {
+		if m&(1<<uint(i)) != 0 {
+			if s != "" {
+				s += "|"
+			}
+
+			s += name
+
+			left ^= (1 << uint(i))
+		}
+	}
+
+	if s == "" && left == 0 {
+		s = "0"
+	}
+
+	if left > 0 {
+		if s != "" {
+			s += "|"
+		}
+		s += fmt.Sprintf("%#x", left)
+	}
+
+	return s
+}
+
+// WakeOnLANs fetches WakeOnLAN information for each ethtool-supported interface
+// on this system.
+func (c *Client) WakeOnLANs() ([]*WakeOnLAN, error) {
+	return c.c.WakeOnLANs()
+}
+
+// WakeOnLAN fetches WakeOnLAN data for the interface specified by the Request
+// header.
+//
+// Fetching Wake-on-LAN information requires elevated privileges and if the
+// caller does not have permission, an error compatible with errors.Is(err,
+// os.ErrPermission) will be returned.
+//
+// If the requested device does not exist or is not supported by the ethtool
+// interface, an error compatible with errors.Is(err, os.ErrNotExist) will be
+// returned.
+func (c *Client) WakeOnLAN(r Request) (*WakeOnLAN, error) {
+	return c.c.WakeOnLAN(r)
 }
 
 // Close cleans up the Client's resources.

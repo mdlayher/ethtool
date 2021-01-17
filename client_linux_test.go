@@ -64,6 +64,13 @@ func TestLinuxClientErrors(t *testing.T) {
 				return err
 			},
 		},
+		{
+			name: "wake on lan",
+			call: func(c *Client, r Request) error {
+				_, err := c.WakeOnLAN(r)
+				return err
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -440,6 +447,193 @@ func TestLinuxClientLinkMode(t *testing.T) {
 	}
 }
 
+func TestLinuxClientWakeOnLANs(t *testing.T) {
+	tests := []struct {
+		name string
+		wols []*WakeOnLAN
+	}{
+		{
+			name: "OK",
+			wols: []*WakeOnLAN{
+				{
+					Index: 1,
+					Name:  "eth0",
+					Modes: Magic | MagicSecure,
+				},
+				{
+					Index: 2,
+					Name:  "eth1",
+					Modes: Magic,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Generate the expected response messages using the wanted list
+			// of WakeOnLAN structures.
+			var msgs []genetlink.Message
+			for _, wol := range tt.wols {
+				msgs = append(msgs, encodeWOL(t, *wol))
+			}
+
+			c := testClient(t, func(greq genetlink.Message, req netlink.Message) ([]genetlink.Message, error) {
+				// Verify the parameters of the requests which are unique to
+				// the LinkMode call.
+				if diff := cmp.Diff(netlink.Request|netlink.Dump, req.Header.Flags); diff != "" {
+					t.Fatalf("unexpected netlink flags (-want +got):\n%s", diff)
+				}
+
+				if diff := cmp.Diff(unix.ETHTOOL_MSG_WOL_GET, int(greq.Header.Command)); diff != "" {
+					t.Fatalf("unexpected ethtool command (-want +got):\n%s", diff)
+				}
+
+				// The request must have a WOL header with only flags, no
+				// requests for an individual interface.
+				b := encode(t, func(ae *netlink.AttributeEncoder) {
+					ae.Nested(unix.ETHTOOL_A_WOL_HEADER, func(nae *netlink.AttributeEncoder) error {
+						nae.Uint32(unix.ETHTOOL_A_HEADER_FLAGS, unix.ETHTOOL_FLAG_COMPACT_BITSETS)
+						return nil
+					})
+				})
+
+				if diff := cmp.Diff(b, greq.Data); diff != "" {
+					t.Fatalf("unexpected request header bytes (-want +got):\n%s", diff)
+				}
+
+				// All clear, return the expected canned data.
+				return msgs, nil
+			})
+			defer c.Close()
+
+			wols, err := c.WakeOnLANs()
+			if err != nil {
+				t.Fatalf("failed to get link mode: %v", err)
+			}
+
+			if diff := cmp.Diff(tt.wols, wols); diff != "" {
+				t.Fatalf("unexpected link mode (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestLinuxClientWakeOnLAN(t *testing.T) {
+	byIndex := func(ae *netlink.AttributeEncoder) {
+		ae.Uint32(unix.ETHTOOL_A_HEADER_DEV_INDEX, 1)
+	}
+
+	tests := []struct {
+		name       string
+		r          Request
+		check      func(ae *netlink.AttributeEncoder)
+		wol        *WakeOnLAN
+		nlErr, err error
+	}{
+		{
+			name:  "EPERM",
+			r:     Request{Index: 1},
+			check: byIndex,
+			nlErr: genltest.Error(int(unix.EPERM)),
+			err:   os.ErrPermission,
+		},
+		{
+			name:  "ok by index",
+			r:     Request{Index: 1},
+			check: byIndex,
+			wol: &WakeOnLAN{
+				Index: 1,
+				Name:  "eth0",
+			},
+		},
+		{
+			name: "ok by name",
+			r:    Request{Name: "eth1"},
+			check: func(ae *netlink.AttributeEncoder) {
+				ae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, "eth1")
+			},
+			wol: &WakeOnLAN{
+				Index: 2,
+				Name:  "eth1",
+			},
+		},
+		{
+			name: "ok both",
+			r: Request{
+				Index: 2,
+				Name:  "eth1",
+			},
+			check: func(ae *netlink.AttributeEncoder) {
+				ae.Uint32(unix.ETHTOOL_A_HEADER_DEV_INDEX, 2)
+				ae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, "eth1")
+			},
+			wol: &WakeOnLAN{
+				Index: 2,
+				Name:  "eth1",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := testClient(t, func(greq genetlink.Message, req netlink.Message) ([]genetlink.Message, error) {
+				// Verify the parameters of the requests which are unique to
+				// the WakeOnLANByInterface calls.
+				if diff := cmp.Diff(netlink.Request, req.Header.Flags); diff != "" {
+					t.Fatalf("unexpected netlink flags (-want +got):\n%s", diff)
+				}
+
+				if diff := cmp.Diff(unix.ETHTOOL_MSG_WOL_GET, int(greq.Header.Command)); diff != "" {
+					t.Fatalf("unexpected ethtool command (-want +got):\n%s", diff)
+				}
+
+				b := encode(t, func(ae *netlink.AttributeEncoder) {
+					ae.Nested(unix.ETHTOOL_A_WOL_HEADER, func(nae *netlink.AttributeEncoder) error {
+						// Apply additional attributes via the check function so
+						// that we can call both the index and name methods
+						// without duplicating much more logic.
+						tt.check(nae)
+						nae.Uint32(unix.ETHTOOL_A_HEADER_FLAGS, unix.ETHTOOL_FLAG_COMPACT_BITSETS)
+						return nil
+					})
+				})
+
+				if diff := cmp.Diff(b, greq.Data); diff != "" {
+					t.Fatalf("unexpected request header bytes (-want +got):\n%s", diff)
+				}
+
+				// If we're returning an error, do so now.
+				if tt.nlErr != nil {
+					return nil, tt.nlErr
+				}
+
+				return []genetlink.Message{encodeWOL(t, *tt.wol)}, nil
+			})
+			defer c.Close()
+
+			wol, err := c.WakeOnLAN(tt.r)
+			if err != nil {
+				if tt.err != nil {
+					// This test expects an error, check it and skip the rest
+					// of the comparisons.
+					if diff := cmp.Diff(tt.err, err, cmpopts.EquateErrors()); diff != "" {
+						t.Fatalf("unexpected error(-want +got):\n%s", diff)
+					}
+
+					return
+				}
+
+				t.Fatalf("failed to get Wake-on-LAN info: %v", err)
+			}
+
+			if diff := cmp.Diff(tt.wol, wol); diff != "" {
+				t.Fatalf("unexpected Wake-on-LAN (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func encodeLinkInfo(t *testing.T, li LinkInfo) genetlink.Message {
 	t.Helper()
 
@@ -483,6 +677,28 @@ func encodeLinkMode(t *testing.T, lm LinkMode) genetlink.Message {
 			packALMs(unix.ETHTOOL_A_LINKMODES_PEER, lm.Peer)
 
 			ae.Uint8(unix.ETHTOOL_A_LINKMODES_DUPLEX, uint8(lm.Duplex))
+		}),
+	}
+}
+
+func encodeWOL(t *testing.T, wol WakeOnLAN) genetlink.Message {
+	t.Helper()
+
+	return genetlink.Message{
+		Data: encode(t, func(ae *netlink.AttributeEncoder) {
+			ae.Nested(unix.ETHTOOL_A_WOL_HEADER, func(nae *netlink.AttributeEncoder) error {
+				nae.Uint32(unix.ETHTOOL_A_HEADER_DEV_INDEX, uint32(wol.Index))
+				nae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, wol.Name)
+				return nil
+			})
+
+			ae.Nested(unix.ETHTOOL_A_WOL_MODES, func(nae *netlink.AttributeEncoder) error {
+				// TODO(mdlayher): ensure this stays in sync if new modes are added!
+				nae.Uint32(unix.ETHTOOL_A_BITSET_SIZE, 8)
+				nae.Uint32(unix.ETHTOOL_A_BITSET_VALUE, uint32(wol.Modes))
+				nae.Uint32(unix.ETHTOOL_A_BITSET_MASK, uint32(wol.Modes))
+				return nil
+			})
 		}),
 	}
 }

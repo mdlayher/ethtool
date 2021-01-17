@@ -145,6 +145,48 @@ func (c *client) linkMode(flags netlink.HeaderFlags, r Request) ([]*LinkMode, er
 	return parseLinkModes(msgs)
 }
 
+// WakeOnLANs fetches Wake-on-LAN information for all ethtool-supported links.
+func (c *client) WakeOnLANs() ([]*WakeOnLAN, error) {
+	return c.wakeOnLAN(netlink.Dump, Request{})
+}
+
+// WakeOnLAN fetches Wake-on-LAN information for a single ethtool-supported
+// interface.
+func (c *client) WakeOnLAN(r Request) (*WakeOnLAN, error) {
+	wols, err := c.wakeOnLAN(0, r)
+	if err != nil {
+		return nil, err
+	}
+
+	if l := len(wols); l != 1 {
+		panicf("ethtool: unexpected number of WakeOnLAN messages for request index: %d, name: %q: %d",
+			r.Index, r.Name, l)
+	}
+
+	return wols[0], nil
+}
+
+// wakeOnLAN is the shared logic for Client.WakeOnLAN(s).
+func (c *client) wakeOnLAN(flags netlink.HeaderFlags, r Request) ([]*WakeOnLAN, error) {
+	msgs, err := c.get(
+		unix.ETHTOOL_A_WOL_HEADER,
+		unix.ETHTOOL_MSG_WOL_GET,
+		flags,
+		r,
+	)
+	if err != nil {
+		// This read-only call requires elevated privileges due to the SecureOn
+		// password. Unwrap the netlink error and return a standard Go error.
+		if errors.Is(err, unix.EPERM) {
+			return nil, os.ErrPermission
+		}
+
+		return nil, err
+	}
+
+	return parseWakeOnLAN(msgs)
+}
+
 // get performs a read-only request to ethtool netlink and enforces some of the
 // API contracts regarding os.ErrNotExist.
 func (c *client) get(
@@ -293,6 +335,8 @@ func parseLinkModes(msgs []genetlink.Message) ([]*LinkMode, error) {
 	return lms, nil
 }
 
+// parseAdvertisedLinkModes decodes an ethtool compact bitset into the input
+// slice of AdvertisedLinkModes.
 func parseAdvertisedLinkModes(alms *[]AdvertisedLinkMode) func(*netlink.AttributeDecoder) error {
 	return func(ad *netlink.AttributeDecoder) error {
 		values, err := newBitset(ad)
@@ -325,6 +369,59 @@ func parseAdvertisedLinkModes(alms *[]AdvertisedLinkMode) func(*netlink.Attribut
 			}
 		}
 
+		return nil
+	}
+}
+
+// parseWakeOnLAN parses WakeOnLAN structures from a slice of generic netlink
+// messages.
+func parseWakeOnLAN(msgs []genetlink.Message) ([]*WakeOnLAN, error) {
+	wols := make([]*WakeOnLAN, 0, len(msgs))
+	for _, m := range msgs {
+		ad, err := netlink.NewAttributeDecoder(m.Data)
+		if err != nil {
+			return nil, err
+		}
+
+		var wol WakeOnLAN
+		for ad.Next() {
+			switch ad.Type() {
+			case unix.ETHTOOL_A_WOL_HEADER:
+				ad.Nested(parseHeader(&wol.Index, &wol.Name))
+			case unix.ETHTOOL_A_WOL_MODES:
+				ad.Nested(parseWakeOnLANModes(&wol.Modes))
+			case unix.ETHTOOL_A_WOL_SOPASS:
+				// TODO(mdlayher): parse the password if we can find a NIC that
+				// supports it, probably using ad.Bytes.
+			}
+		}
+
+		if err := ad.Err(); err != nil {
+			return nil, err
+		}
+
+		wols = append(wols, &wol)
+	}
+
+	return wols, nil
+}
+
+// parseWakeOnLANModes decodes an ethtool compact bitset into the input WOLMode.
+func parseWakeOnLANModes(m *WOLMode) func(*netlink.AttributeDecoder) error {
+	return func(ad *netlink.AttributeDecoder) error {
+		values, err := newBitset(ad)
+		if err != nil {
+			return err
+		}
+
+		// Assume the kernel will not sprout 25 more Wake-on-LAN modes and just
+		// inspect the first uint32 so we can populate the WOLMode bitmask for
+		// the caller.
+		if l := len(values); l > 1 {
+			panicf("ethtool: too many Wake-on-LAN mode uint32s in bitset: %d", l)
+		}
+
+		*m = WOLMode(values[0])
 		return nil
 	}
 }

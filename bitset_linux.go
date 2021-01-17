@@ -29,7 +29,8 @@ func newBitset(ad *netlink.AttributeDecoder) (bitset, error) {
 		case unix.ETHTOOL_A_BITSET_NOMASK:
 			doMask = false
 		case unix.ETHTOOL_A_BITSET_SIZE:
-			// Convert words to bytes and allocate accordingly.
+			// Convert number of bits to number of bytes, rounded up to the
+			// nearest 32 bits for a uint32 boundary.
 			n := (ad.Uint32() + 31) / 32
 			values = make(bitset, n)
 			if doMask {
