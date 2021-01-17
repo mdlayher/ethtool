@@ -695,6 +695,11 @@ func encodeWOL(t *testing.T, wol WakeOnLAN) genetlink.Message {
 			ae.Nested(unix.ETHTOOL_A_WOL_MODES, func(nae *netlink.AttributeEncoder) error {
 				// TODO(mdlayher): ensure this stays in sync if new modes are added!
 				nae.Uint32(unix.ETHTOOL_A_BITSET_SIZE, 8)
+
+				// Note that we are cheating a bit here by directly passing a
+				// uint32, but this is okay because there are less than 32 bits
+				// for the WOL modes and therefore the bitset is just the native
+				// endian representation of the modes bitmask.
 				nae.Uint32(unix.ETHTOOL_A_BITSET_VALUE, uint32(wol.Modes))
 				nae.Uint32(unix.ETHTOOL_A_BITSET_MASK, uint32(wol.Modes))
 				return nil
