@@ -194,5 +194,19 @@ func (c *Client) WakeOnLAN(r Request) (*WakeOnLAN, error) {
 	return c.c.WakeOnLAN(r)
 }
 
+// SetWakeOnLAN sets the WakeOnLAN parameters for the interface identified by
+// the Request field.
+//
+// Setting Wake-on-LAN parameters requires elevated privileges and if the caller
+// does not have permission, an error compatible with errors.Is(err,
+// os.ErrPermission) will be returned.
+//
+// If the requested device does not exist or is not supported by the ethtool
+// interface, an error compatible with errors.Is(err, os.ErrNotExist) will be
+// returned.
+func (c *Client) SetWakeOnLAN(wol WakeOnLAN) error {
+	return c.c.SetWakeOnLAN(wol)
+}
+
 // Close cleans up the Client's resources.
 func (c *Client) Close() error { return c.c.Close() }

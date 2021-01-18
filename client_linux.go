@@ -102,6 +102,7 @@ func (c *client) linkInfo(flags netlink.HeaderFlags, r Request) ([]*LinkInfo, er
 		unix.ETHTOOL_MSG_LINKINFO_GET,
 		flags,
 		r,
+		nil,
 	)
 	if err != nil {
 		return nil, err
@@ -137,6 +138,7 @@ func (c *client) linkMode(flags netlink.HeaderFlags, r Request) ([]*LinkMode, er
 		unix.ETHTOOL_MSG_LINKMODES_GET,
 		flags,
 		r,
+		nil,
 	)
 	if err != nil {
 		return nil, err
@@ -166,6 +168,33 @@ func (c *client) WakeOnLAN(r Request) (*WakeOnLAN, error) {
 	return wols[0], nil
 }
 
+// SetWakeOnLAN configures Wake-on-LAN parameters for a single ethtool-supported
+// interface.
+func (c *client) SetWakeOnLAN(wol WakeOnLAN) error {
+	_, err := c.get(
+		unix.ETHTOOL_A_WOL_HEADER,
+		unix.ETHTOOL_MSG_WOL_SET,
+		netlink.Acknowledge,
+		// TODO(mdlayher): deduplicate this by probably passing the Request
+		// fields directly as part of wol.encode?
+		Request{
+			Index: wol.Index,
+			Name:  wol.Name,
+		},
+		wol.encode,
+	)
+	if err != nil {
+		// Set calls require elevated privileges.
+		if errors.Is(err, unix.EPERM) {
+			return os.ErrPermission
+		}
+
+		return err
+	}
+
+	return nil
+}
+
 // wakeOnLAN is the shared logic for Client.WakeOnLAN(s).
 func (c *client) wakeOnLAN(flags netlink.HeaderFlags, r Request) ([]*WakeOnLAN, error) {
 	msgs, err := c.get(
@@ -173,6 +202,7 @@ func (c *client) wakeOnLAN(flags netlink.HeaderFlags, r Request) ([]*WakeOnLAN, 
 		unix.ETHTOOL_MSG_WOL_GET,
 		flags,
 		r,
+		nil,
 	)
 	if err != nil {
 		// This read-only call requires elevated privileges due to the SecureOn
@@ -187,13 +217,32 @@ func (c *client) wakeOnLAN(flags netlink.HeaderFlags, r Request) ([]*WakeOnLAN, 
 	return parseWakeOnLAN(msgs)
 }
 
-// get performs a read-only request to ethtool netlink and enforces some of the
-// API contracts regarding os.ErrNotExist.
+// encode packs WakeOnLAN data into the appropriate netlink attributes for the
+// encoder.
+func (wol WakeOnLAN) encode(ae *netlink.AttributeEncoder) {
+	ae.Nested(unix.ETHTOOL_A_WOL_MODES, func(nae *netlink.AttributeEncoder) error {
+		// TODO(mdlayher): ensure this stays in sync if new modes are added!
+		nae.Uint32(unix.ETHTOOL_A_BITSET_SIZE, 8)
+
+		// Note that we are cheating a bit here by directly passing a
+		// uint32, but this is okay because there are less than 32 bits
+		// for the WOL modes and therefore the bitset is just the native
+		// endian representation of the modes bitmask.
+		nae.Uint32(unix.ETHTOOL_A_BITSET_VALUE, uint32(wol.Modes))
+		nae.Uint32(unix.ETHTOOL_A_BITSET_MASK, uint32(wol.Modes))
+		return nil
+	})
+}
+
+// get performs a request/response interaction with ethtool netlink and enforces
+// some of the API contracts regarding os.ErrNotExist.
 func (c *client) get(
 	header uint16,
 	cmd uint8,
 	flags netlink.HeaderFlags,
 	r Request,
+	// May be nil; used to apply optional parameters.
+	params func(ae *netlink.AttributeEncoder),
 ) ([]genetlink.Message, error) {
 	if flags&netlink.Dump == 0 && r.Index == 0 && r.Name == "" {
 		// The caller is not requesting to dump information for multiple
@@ -227,6 +276,11 @@ func (c *client) get(
 
 		return nil
 	})
+
+	if params != nil {
+		// Optionally apply more parameters to the attribute encoder.
+		params(ae)
+	}
 
 	// Note: don't send netlink.Acknowledge or we get an extra message back from
 	// the kernel which doesn't seem useful as of now.

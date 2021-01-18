@@ -20,4 +20,5 @@ func (c *client) LinkModes() ([]*LinkMode, error)         { return nil, errUnsup
 func (c *client) LinkMode(_ Request) (*LinkMode, error)   { return nil, errUnsupported }
 func (c *client) WakeOnLANs() ([]*WakeOnLAN, error)       { return nil, errUnsupported }
 func (c *client) WakeOnLAN(_ Request) (*WakeOnLAN, error) { return nil, errUnsupported }
+func (c *client) SetWakeOnLAN(_ WakeOnLAN) error          { return errUnsupported }
 func (c *client) Close() error                            { return errUnsupported }
