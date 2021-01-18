@@ -175,24 +175,10 @@ func (c *client) SetWakeOnLAN(wol WakeOnLAN) error {
 		unix.ETHTOOL_A_WOL_HEADER,
 		unix.ETHTOOL_MSG_WOL_SET,
 		netlink.Acknowledge,
-		// TODO(mdlayher): deduplicate this by probably passing the Request
-		// fields directly as part of wol.encode?
-		Interface{
-			Index: wol.Interface.Index,
-			Name:  wol.Interface.Name,
-		},
+		wol.Interface,
 		wol.encode,
 	)
-	if err != nil {
-		// Set calls require elevated privileges.
-		if errors.Is(err, unix.EPERM) {
-			return os.ErrPermission
-		}
-
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // wakeOnLAN is the shared logic for Client.WakeOnLAN(s).
@@ -205,12 +191,6 @@ func (c *client) wakeOnLAN(flags netlink.HeaderFlags, ifi Interface) ([]*WakeOnL
 		nil,
 	)
 	if err != nil {
-		// This read-only call requires elevated privileges due to the SecureOn
-		// password. Unwrap the netlink error and return a standard Go error.
-		if errors.Is(err, unix.EPERM) {
-			return nil, os.ErrPermission
-		}
-
 		return nil, err
 	}
 
@@ -286,12 +266,21 @@ func (c *client) get(
 	// the kernel which doesn't seem useful as of now.
 	msgs, err := c.execute(cmd, flags, ae)
 	if err != nil {
-		// If the queried interface is not supported by the ethtool APIs
-		// (EOPNOTSUPP) or does not exist at all (ENODEV), enforce the contract
-		// with callers by providing an OS-independent Go error which the caller
-		// can inspect.
+		// All *netlink.Errors with system call errnos must be unpacked to
+		// operating system-independent Go errors such as those found in
+		// os.Err*.
+
+		// If the queried interface is not supported by the ethtool
+		// APIs (EOPNOTSUPP) or does not exist at all (ENODEV) we return "not
+		// exist".
 		if errors.Is(err, unix.EOPNOTSUPP) || errors.Is(err, unix.ENODEV) {
 			return nil, os.ErrNotExist
+		}
+
+		// Set calls and occasionally Get (such as WakeOnLAN) require elevated
+		// privileges.
+		if errors.Is(err, unix.EPERM) {
+			return nil, os.ErrPermission
 		}
 
 		return nil, err
