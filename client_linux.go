@@ -147,6 +147,42 @@ func (c *client) linkMode(flags netlink.HeaderFlags, ifi Interface) ([]*LinkMode
 	return parseLinkModes(msgs)
 }
 
+// LinkStates fetches link state data for all ethtool-supported links.
+func (c *client) LinkStates() ([]*LinkState, error) {
+	return c.linkState(netlink.Dump, Interface{})
+}
+
+// LinkState fetches link state data for a single ethtool-supported link.
+func (c *client) LinkState(ifi Interface) (*LinkState, error) {
+	lss, err := c.linkState(0, ifi)
+	if err != nil {
+		return nil, err
+	}
+
+	if l := len(lss); l != 1 {
+		panicf("ethtool: unexpected number of LinkState messages for request index: %d, name: %q: %d",
+			ifi.Index, ifi.Name, l)
+	}
+
+	return lss[0], nil
+}
+
+// linkState is the shared logic for Client.LinkState(s).
+func (c *client) linkState(flags netlink.HeaderFlags, ifi Interface) ([]*LinkState, error) {
+	msgs, err := c.get(
+		unix.ETHTOOL_A_LINKSTATE_HEADER,
+		unix.ETHTOOL_MSG_LINKSTATE_GET,
+		flags,
+		ifi,
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseLinkState(msgs)
+}
+
 // WakeOnLANs fetches Wake-on-LAN information for all ethtool-supported links.
 func (c *client) WakeOnLANs() ([]*WakeOnLAN, error) {
 	return c.wakeOnLAN(netlink.Dump, Interface{})
@@ -414,6 +450,39 @@ func parseAdvertisedLinkModes(alms *[]AdvertisedLinkMode) func(*netlink.Attribut
 
 		return nil
 	}
+}
+
+// parseLinkState parses LinkState structures from a slice of generic netlink
+// messages.
+func parseLinkState(msgs []genetlink.Message) ([]*LinkState, error) {
+	lss := make([]*LinkState, 0, len(msgs))
+	for _, m := range msgs {
+		ad, err := netlink.NewAttributeDecoder(m.Data)
+		if err != nil {
+			return nil, err
+		}
+
+		var ls LinkState
+		for ad.Next() {
+			// TODO(mdlayher): try this out on fancier NICs to parse more of the
+			// extended state information.
+			switch ad.Type() {
+			case unix.ETHTOOL_A_LINKSTATE_HEADER:
+				ad.Nested(parseInterface(&ls.Interface))
+			case unix.ETHTOOL_A_LINKSTATE_LINK:
+				// Up/down is reported as a uint8 boolean.
+				ls.Link = ad.Uint8() != 0
+			}
+		}
+
+		if err := ad.Err(); err != nil {
+			return nil, err
+		}
+
+		lss = append(lss, &ls)
+	}
+
+	return lss, nil
 }
 
 // parseWakeOnLAN parses WakeOnLAN structures from a slice of generic netlink

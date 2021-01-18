@@ -108,6 +108,27 @@ func (c *Client) LinkMode(ifi Interface) (*LinkMode, error) {
 	return c.c.LinkMode(ifi)
 }
 
+// LinkState contains link state information for an Ethernet interface.
+type LinkState struct {
+	Interface Interface
+	Link      bool
+}
+
+// LinkStates fetches LinkState structures for each ethtool-supported interface
+// on this system.
+func (c *Client) LinkStates() ([]*LinkState, error) {
+	return c.c.LinkStates()
+}
+
+// LinkState fetches LinkState data for the specified Interface.
+//
+// If the requested device does not exist or is not supported by the ethtool
+// interface, an error compatible with errors.Is(err, os.ErrNotExist) will be
+// returned.
+func (c *Client) LinkState(ifi Interface) (*LinkState, error) {
+	return c.c.LinkState(ifi)
+}
+
 // A WakeOnLAN contains the Wake-on-LAN parameters for an interface.
 type WakeOnLAN struct {
 	Interface Interface

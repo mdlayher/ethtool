@@ -58,6 +58,13 @@ func TestLinuxClientErrors(t *testing.T) {
 			},
 		},
 		{
+			name: "link state",
+			call: func(c *Client, ifi Interface) error {
+				_, err := c.LinkState(ifi)
+				return err
+			},
+		},
+		{
 			name: "wake on lan",
 			call: func(c *Client, ifi Interface) error {
 				_, err := c.WakeOnLAN(ifi)
@@ -360,6 +367,129 @@ func TestLinuxClientLinkMode(t *testing.T) {
 	}
 }
 
+func TestLinuxClientLinkStates(t *testing.T) {
+	tests := []struct {
+		name string
+		lss  []*LinkState
+	}{
+		{
+			name: "OK",
+			lss: []*LinkState{
+				{
+					Interface: Interface{
+						Index: 1,
+						Name:  "eth0",
+					},
+				},
+				{
+					Interface: Interface{
+						Index: 2,
+						Name:  "eth1",
+					},
+					Link: true,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Generate the expected response messages using the wanted list
+			// of LinkInfo structures.
+			var msgs []genetlink.Message
+			for _, ls := range tt.lss {
+				msgs = append(msgs, encodeLinkState(t, *ls))
+			}
+
+			c := testClient(t, clientTest{
+				HeaderFlags: netlink.Request | netlink.Dump,
+				Command:     unix.ETHTOOL_MSG_LINKSTATE_GET,
+				Attributes:  requestHeader(unix.ETHTOOL_A_LINKSTATE_HEADER),
+
+				Messages: msgs,
+			})
+
+			lss, err := c.LinkStates()
+			if err != nil {
+				t.Fatalf("failed to get link states: %v", err)
+			}
+
+			if diff := cmp.Diff(tt.lss, lss); diff != "" {
+				t.Fatalf("unexpected link states (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestLinuxClientLinkState(t *testing.T) {
+	tests := []struct {
+		name  string
+		ifi   Interface
+		attrs func(ae *netlink.AttributeEncoder)
+		ls    *LinkState
+	}{
+		{
+			name:  "by index",
+			ifi:   Interface{Index: 1},
+			attrs: requestIndex(unix.ETHTOOL_A_LINKSTATE_HEADER),
+			ls: &LinkState{
+				Interface: Interface{
+					Index: 1,
+					Name:  "eth0",
+				},
+			},
+		},
+		{
+			name:  "by name",
+			ifi:   Interface{Name: "eth1"},
+			attrs: requestName(unix.ETHTOOL_A_LINKSTATE_HEADER),
+			ls: &LinkState{
+				Interface: Interface{
+					Index: 2,
+					Name:  "eth1",
+				},
+				Link: true,
+			},
+		},
+		{
+			name: "both",
+			ifi: Interface{
+				Index: 2,
+				Name:  "eth1",
+			},
+			attrs: requestBoth(unix.ETHTOOL_A_LINKSTATE_HEADER),
+			ls: &LinkState{
+				Interface: Interface{
+					Index: 2,
+					Name:  "eth1",
+				},
+				Link: true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := testClient(t, clientTest{
+				HeaderFlags: netlink.Request,
+				Command:     unix.ETHTOOL_MSG_LINKSTATE_GET,
+				Attributes:  tt.attrs,
+
+				Messages: []genetlink.Message{encodeLinkState(t, *tt.ls)},
+			})
+
+			ls, err := c.LinkState(tt.ifi)
+			if err != nil {
+				t.Fatalf("failed to get link state: %v", err)
+			}
+
+			if diff := cmp.Diff(tt.ls, ls); diff != "" {
+				t.Fatalf("unexpected link state (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestLinuxClientWakeOnLANs(t *testing.T) {
 	tests := []struct {
 		name string
@@ -641,6 +771,28 @@ func encodeLinkMode(t *testing.T, lm LinkMode) genetlink.Message {
 			packALMs(unix.ETHTOOL_A_LINKMODES_PEER, lm.Peer)
 
 			ae.Uint8(unix.ETHTOOL_A_LINKMODES_DUPLEX, uint8(lm.Duplex))
+		}),
+	}
+}
+
+func encodeLinkState(t *testing.T, ls LinkState) genetlink.Message {
+	t.Helper()
+
+	return genetlink.Message{
+		Data: encode(t, func(ae *netlink.AttributeEncoder) {
+			ae.Nested(unix.ETHTOOL_A_LINKSTATE_HEADER, func(nae *netlink.AttributeEncoder) error {
+				nae.Uint32(unix.ETHTOOL_A_HEADER_DEV_INDEX, uint32(ls.Interface.Index))
+				nae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, ls.Interface.Name)
+				return nil
+			})
+
+			// uint8 boolean conversion.
+			var link uint8
+			if ls.Link {
+				link = 1
+			}
+
+			ae.Uint8(unix.ETHTOOL_A_LINKSTATE_LINK, link)
 		}),
 	}
 }
