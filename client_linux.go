@@ -77,31 +77,31 @@ func (c *client) Close() error { return c.c.Close() }
 
 // LinkInfos fetches information about all ethtool-supported links.
 func (c *client) LinkInfos() ([]*LinkInfo, error) {
-	return c.linkInfo(netlink.Dump, Request{})
+	return c.linkInfo(netlink.Dump, Interface{})
 }
 
 // LinkInfo fetches information about a single ethtool-supported link.
-func (c *client) LinkInfo(r Request) (*LinkInfo, error) {
-	lis, err := c.linkInfo(0, r)
+func (c *client) LinkInfo(ifi Interface) (*LinkInfo, error) {
+	lis, err := c.linkInfo(0, ifi)
 	if err != nil {
 		return nil, err
 	}
 
 	if l := len(lis); l != 1 {
 		panicf("ethtool: unexpected number of LinkInfo messages for request index: %d, name: %q: %d",
-			r.Index, r.Name, l)
+			ifi.Index, ifi.Name, l)
 	}
 
 	return lis[0], nil
 }
 
 // linkInfo is the shared logic for Client.LinkInfo(s).
-func (c *client) linkInfo(flags netlink.HeaderFlags, r Request) ([]*LinkInfo, error) {
+func (c *client) linkInfo(flags netlink.HeaderFlags, ifi Interface) ([]*LinkInfo, error) {
 	msgs, err := c.get(
 		unix.ETHTOOL_A_LINKINFO_HEADER,
 		unix.ETHTOOL_MSG_LINKINFO_GET,
 		flags,
-		r,
+		ifi,
 		nil,
 	)
 	if err != nil {
@@ -113,31 +113,31 @@ func (c *client) linkInfo(flags netlink.HeaderFlags, r Request) ([]*LinkInfo, er
 
 // LinkModes fetches modes for all ethtool-supported links.
 func (c *client) LinkModes() ([]*LinkMode, error) {
-	return c.linkMode(netlink.Dump, Request{})
+	return c.linkMode(netlink.Dump, Interface{})
 }
 
 // LinkMode fetches information about a single ethtool-supported link's modes.
-func (c *client) LinkMode(r Request) (*LinkMode, error) {
-	lms, err := c.linkMode(0, r)
+func (c *client) LinkMode(ifi Interface) (*LinkMode, error) {
+	lms, err := c.linkMode(0, ifi)
 	if err != nil {
 		return nil, err
 	}
 
 	if l := len(lms); l != 1 {
 		panicf("ethtool: unexpected number of LinkMode messages for request index: %d, name: %q: %d",
-			r.Index, r.Name, l)
+			ifi.Index, ifi.Name, l)
 	}
 
 	return lms[0], nil
 }
 
 // linkMode is the shared logic for Client.LinkMode(s).
-func (c *client) linkMode(flags netlink.HeaderFlags, r Request) ([]*LinkMode, error) {
+func (c *client) linkMode(flags netlink.HeaderFlags, ifi Interface) ([]*LinkMode, error) {
 	msgs, err := c.get(
 		unix.ETHTOOL_A_LINKMODES_HEADER,
 		unix.ETHTOOL_MSG_LINKMODES_GET,
 		flags,
-		r,
+		ifi,
 		nil,
 	)
 	if err != nil {
@@ -149,20 +149,20 @@ func (c *client) linkMode(flags netlink.HeaderFlags, r Request) ([]*LinkMode, er
 
 // WakeOnLANs fetches Wake-on-LAN information for all ethtool-supported links.
 func (c *client) WakeOnLANs() ([]*WakeOnLAN, error) {
-	return c.wakeOnLAN(netlink.Dump, Request{})
+	return c.wakeOnLAN(netlink.Dump, Interface{})
 }
 
 // WakeOnLAN fetches Wake-on-LAN information for a single ethtool-supported
 // interface.
-func (c *client) WakeOnLAN(r Request) (*WakeOnLAN, error) {
-	wols, err := c.wakeOnLAN(0, r)
+func (c *client) WakeOnLAN(ifi Interface) (*WakeOnLAN, error) {
+	wols, err := c.wakeOnLAN(0, ifi)
 	if err != nil {
 		return nil, err
 	}
 
 	if l := len(wols); l != 1 {
 		panicf("ethtool: unexpected number of WakeOnLAN messages for request index: %d, name: %q: %d",
-			r.Index, r.Name, l)
+			ifi.Index, ifi.Name, l)
 	}
 
 	return wols[0], nil
@@ -177,9 +177,9 @@ func (c *client) SetWakeOnLAN(wol WakeOnLAN) error {
 		netlink.Acknowledge,
 		// TODO(mdlayher): deduplicate this by probably passing the Request
 		// fields directly as part of wol.encode?
-		Request{
-			Index: wol.Index,
-			Name:  wol.Name,
+		Interface{
+			Index: wol.Interface.Index,
+			Name:  wol.Interface.Name,
 		},
 		wol.encode,
 	)
@@ -196,12 +196,12 @@ func (c *client) SetWakeOnLAN(wol WakeOnLAN) error {
 }
 
 // wakeOnLAN is the shared logic for Client.WakeOnLAN(s).
-func (c *client) wakeOnLAN(flags netlink.HeaderFlags, r Request) ([]*WakeOnLAN, error) {
+func (c *client) wakeOnLAN(flags netlink.HeaderFlags, ifi Interface) ([]*WakeOnLAN, error) {
 	msgs, err := c.get(
 		unix.ETHTOOL_A_WOL_HEADER,
 		unix.ETHTOOL_MSG_WOL_GET,
 		flags,
-		r,
+		ifi,
 		nil,
 	)
 	if err != nil {
@@ -240,11 +240,11 @@ func (c *client) get(
 	header uint16,
 	cmd uint8,
 	flags netlink.HeaderFlags,
-	r Request,
+	ifi Interface,
 	// May be nil; used to apply optional parameters.
 	params func(ae *netlink.AttributeEncoder),
 ) ([]genetlink.Message, error) {
-	if flags&netlink.Dump == 0 && r.Index == 0 && r.Name == "" {
+	if flags&netlink.Dump == 0 && ifi.Index == 0 && ifi.Name == "" {
 		// The caller is not requesting to dump information for multiple
 		// interfaces and thus has to specify some identifier or the kernel will
 		// EINVAL on this path.
@@ -262,11 +262,11 @@ func (c *client) get(
 		// Note that if the client happens to pass an incompatible non-zero
 		// index/name pair, the kernel will return an error and we'll
 		// immediately send that back.
-		if r.Index > 0 {
-			nae.Uint32(unix.ETHTOOL_A_HEADER_DEV_INDEX, uint32(r.Index))
+		if ifi.Index > 0 {
+			nae.Uint32(unix.ETHTOOL_A_HEADER_DEV_INDEX, uint32(ifi.Index))
 		}
-		if r.Name != "" {
-			nae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, r.Name)
+		if ifi.Name != "" {
+			nae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, ifi.Name)
 		}
 
 		// Unconditionally add the compact bitsets flag since the ethtool
@@ -337,7 +337,7 @@ func parseLinkInfo(msgs []genetlink.Message) ([]*LinkInfo, error) {
 		for ad.Next() {
 			switch ad.Type() {
 			case unix.ETHTOOL_A_LINKINFO_HEADER:
-				ad.Nested(parseHeader(&li.Index, &li.Name))
+				ad.Nested(parseInterface(&li.Interface))
 			case unix.ETHTOOL_A_LINKINFO_PORT:
 				li.Port = Port(ad.Uint8())
 			}
@@ -367,7 +367,7 @@ func parseLinkModes(msgs []genetlink.Message) ([]*LinkMode, error) {
 		for ad.Next() {
 			switch ad.Type() {
 			case unix.ETHTOOL_A_LINKMODES_HEADER:
-				ad.Nested(parseHeader(&lm.Index, &lm.Name))
+				ad.Nested(parseInterface(&lm.Interface))
 			case unix.ETHTOOL_A_LINKMODES_OURS:
 				ad.Nested(parseAdvertisedLinkModes(&lm.Ours))
 			case unix.ETHTOOL_A_LINKMODES_PEER:
@@ -441,7 +441,7 @@ func parseWakeOnLAN(msgs []genetlink.Message) ([]*WakeOnLAN, error) {
 		for ad.Next() {
 			switch ad.Type() {
 			case unix.ETHTOOL_A_WOL_HEADER:
-				ad.Nested(parseHeader(&wol.Index, &wol.Name))
+				ad.Nested(parseInterface(&wol.Interface))
 			case unix.ETHTOOL_A_WOL_MODES:
 				ad.Nested(parseWakeOnLANModes(&wol.Modes))
 			case unix.ETHTOOL_A_WOL_SOPASS:
@@ -480,16 +480,16 @@ func parseWakeOnLANModes(m *WOLMode) func(*netlink.AttributeDecoder) error {
 	}
 }
 
-// parseHeader decodes information from a response header into the input
-// values.
-func parseHeader(index *int, name *string) func(*netlink.AttributeDecoder) error {
+// parseInterface decodes information from a response header into the input
+// Interface.
+func parseInterface(ifi *Interface) func(*netlink.AttributeDecoder) error {
 	return func(ad *netlink.AttributeDecoder) error {
 		for ad.Next() {
 			switch ad.Type() {
 			case unix.ETHTOOL_A_HEADER_DEV_INDEX:
-				*index = int(ad.Uint32())
+				(*ifi).Index = int(ad.Uint32())
 			case unix.ETHTOOL_A_HEADER_DEV_NAME:
-				*name = ad.String()
+				(*ifi).Name = ad.String()
 			}
 		}
 		return nil

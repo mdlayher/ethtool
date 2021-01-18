@@ -21,9 +21,9 @@ func New() (*Client, error) {
 	return &Client{c: c}, nil
 }
 
-// A Request is the ethtool netlink interface request header, which is used to
-// identify an interface being queried by its index and/or name.
-type Request struct {
+// An Interface is an ethtool netlink Ethernet interface. Interfaces are used to
+// identify an Ethernet interface being queried by its index and/or name.
+type Interface struct {
 	// Callers may choose to set either Index, Name, or both fields. Note that
 	// if both are set, the kernel will verify that both Index and Name are
 	// associated with the same interface. If they are not, an error will be
@@ -34,9 +34,8 @@ type Request struct {
 
 // LinkInfo contains link settings for an Ethernet interface.
 type LinkInfo struct {
-	Index int
-	Name  string
-	Port  Port
+	Interface Interface
+	Port      Port
 }
 
 // A Port is the port type for a LinkInfo structure.
@@ -60,19 +59,18 @@ func (c *Client) LinkInfos() ([]*LinkInfo, error) {
 	return c.c.LinkInfos()
 }
 
-// LinkInfo fetches LinkInfo for the interface specified by the Request header.
+// LinkInfo fetches LinkInfo for the specified Interface.
 //
 // If the requested device does not exist or is not supported by the ethtool
 // interface, an error compatible with errors.Is(err, os.ErrNotExist) will be
 // returned.
-func (c *Client) LinkInfo(r Request) (*LinkInfo, error) {
-	return c.c.LinkInfo(r)
+func (c *Client) LinkInfo(ifi Interface) (*LinkInfo, error) {
+	return c.c.LinkInfo(ifi)
 }
 
 // LinkMode contains link mode information for an Ethernet interface.
 type LinkMode struct {
-	Index         int
-	Name          string
+	Interface     Interface
 	SpeedMegabits int
 	Ours, Peer    []AdvertisedLinkMode
 	Duplex        Duplex
@@ -101,21 +99,19 @@ func (c *Client) LinkModes() ([]*LinkMode, error) {
 	return c.c.LinkModes()
 }
 
-// LinkMode fetches LinkMode data for the interface specified by the Request
-// header.
+// LinkMode fetches LinkMode data for the specified Interface.
 //
 // If the requested device does not exist or is not supported by the ethtool
 // interface, an error compatible with errors.Is(err, os.ErrNotExist) will be
 // returned.
-func (c *Client) LinkMode(r Request) (*LinkMode, error) {
-	return c.c.LinkMode(r)
+func (c *Client) LinkMode(ifi Interface) (*LinkMode, error) {
+	return c.c.LinkMode(ifi)
 }
 
 // A WakeOnLAN contains the Wake-on-LAN parameters for an interface.
 type WakeOnLAN struct {
-	Index int
-	Name  string
-	Modes WOLMode
+	Interface Interface
+	Modes     WOLMode
 }
 
 // A WOLMode is a Wake-on-LAN mode bitmask of mode(s) supported by an interface.
@@ -180,8 +176,7 @@ func (c *Client) WakeOnLANs() ([]*WakeOnLAN, error) {
 	return c.c.WakeOnLANs()
 }
 
-// WakeOnLAN fetches WakeOnLAN data for the interface specified by the Request
-// header.
+// WakeOnLAN fetches WakeOnLAN parameters for the specified Interface.
 //
 // Fetching Wake-on-LAN information requires elevated privileges and if the
 // caller does not have permission, an error compatible with errors.Is(err,
@@ -190,12 +185,11 @@ func (c *Client) WakeOnLANs() ([]*WakeOnLAN, error) {
 // If the requested device does not exist or is not supported by the ethtool
 // interface, an error compatible with errors.Is(err, os.ErrNotExist) will be
 // returned.
-func (c *Client) WakeOnLAN(r Request) (*WakeOnLAN, error) {
-	return c.c.WakeOnLAN(r)
+func (c *Client) WakeOnLAN(ifi Interface) (*WakeOnLAN, error) {
+	return c.c.WakeOnLAN(ifi)
 }
 
-// SetWakeOnLAN sets the WakeOnLAN parameters for the interface identified by
-// the Request field.
+// SetWakeOnLAN sets the WakeOnLAN parameters for the Interface in wol.
 //
 // Setting Wake-on-LAN parameters requires elevated privileges and if the caller
 // does not have permission, an error compatible with errors.Is(err,

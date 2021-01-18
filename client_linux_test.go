@@ -17,7 +17,7 @@ import (
 func TestLinuxClientErrors(t *testing.T) {
 	tests := []struct {
 		name  string
-		r     Request
+		ifi   Interface
 		errno int
 		err   error
 	}{
@@ -27,13 +27,13 @@ func TestLinuxClientErrors(t *testing.T) {
 		},
 		{
 			name:  "ENODEV",
-			r:     Request{Index: 1},
+			ifi:   Interface{Index: 1},
 			errno: int(unix.ENODEV),
 			err:   os.ErrNotExist,
 		},
 		{
 			name:  "EOPNOTSUPP",
-			r:     Request{Index: 1},
+			ifi:   Interface{Index: 1},
 			errno: int(unix.EOPNOTSUPP),
 			err:   os.ErrNotExist,
 		},
@@ -41,26 +41,26 @@ func TestLinuxClientErrors(t *testing.T) {
 
 	fns := []struct {
 		name string
-		call func(c *Client, r Request) error
+		call func(c *Client, ifi Interface) error
 	}{
 		{
 			name: "link info",
-			call: func(c *Client, r Request) error {
-				_, err := c.LinkInfo(r)
+			call: func(c *Client, ifi Interface) error {
+				_, err := c.LinkInfo(ifi)
 				return err
 			},
 		},
 		{
 			name: "link mode",
-			call: func(c *Client, r Request) error {
-				_, err := c.LinkMode(r)
+			call: func(c *Client, ifi Interface) error {
+				_, err := c.LinkMode(ifi)
 				return err
 			},
 		},
 		{
 			name: "wake on lan",
-			call: func(c *Client, r Request) error {
-				_, err := c.WakeOnLAN(r)
+			call: func(c *Client, ifi Interface) error {
+				_, err := c.WakeOnLAN(ifi)
 				return err
 			},
 		},
@@ -75,7 +75,7 @@ func TestLinuxClientErrors(t *testing.T) {
 					})
 					defer c.Close()
 
-					err := fn.call(c, tt.r)
+					err := fn.call(c, tt.ifi)
 					if diff := cmp.Diff(tt.err, err, cmpopts.EquateErrors()); diff != "" {
 						t.Fatalf("unexpected error (-want +got):\n%s", diff)
 					}
@@ -94,14 +94,18 @@ func TestLinuxClientLinkInfos(t *testing.T) {
 			name: "OK",
 			lis: []*LinkInfo{
 				{
-					Index: 1,
-					Name:  "eth0",
-					Port:  TwistedPair,
+					Interface: Interface{
+						Index: 1,
+						Name:  "eth0",
+					},
+					Port: TwistedPair,
 				},
 				{
-					Index: 2,
-					Name:  "eth1",
-					Port:  DirectAttach,
+					Interface: Interface{
+						Index: 2,
+						Name:  "eth1",
+					},
+					Port: DirectAttach,
 				},
 			},
 		},
@@ -139,41 +143,47 @@ func TestLinuxClientLinkInfos(t *testing.T) {
 func TestLinuxClientLinkInfo(t *testing.T) {
 	tests := []struct {
 		name  string
-		r     Request
+		ifi   Interface
 		attrs func(ae *netlink.AttributeEncoder)
 		li    *LinkInfo
 	}{
 		{
 			name:  "by index",
-			r:     Request{Index: 1},
+			ifi:   Interface{Index: 1},
 			attrs: requestIndex(unix.ETHTOOL_A_LINKINFO_HEADER),
 			li: &LinkInfo{
-				Index: 1,
-				Name:  "eth0",
-				Port:  TwistedPair,
+				Interface: Interface{
+					Index: 1,
+					Name:  "eth0",
+				},
+				Port: TwistedPair,
 			},
 		},
 		{
 			name:  "by name",
-			r:     Request{Name: "eth1"},
+			ifi:   Interface{Name: "eth1"},
 			attrs: requestName(unix.ETHTOOL_A_LINKINFO_HEADER),
 			li: &LinkInfo{
-				Index: 2,
-				Name:  "eth1",
-				Port:  DirectAttach,
+				Interface: Interface{
+					Index: 2,
+					Name:  "eth1",
+				},
+				Port: DirectAttach,
 			},
 		},
 		{
 			name: "both",
-			r: Request{
+			ifi: Interface{
 				Index: 2,
 				Name:  "eth1",
 			},
 			attrs: requestBoth(unix.ETHTOOL_A_LINKINFO_HEADER),
 			li: &LinkInfo{
-				Index: 2,
-				Name:  "eth1",
-				Port:  DirectAttach,
+				Interface: Interface{
+					Index: 2,
+					Name:  "eth1",
+				},
+				Port: DirectAttach,
 			},
 		},
 	}
@@ -188,7 +198,7 @@ func TestLinuxClientLinkInfo(t *testing.T) {
 				Messages: []genetlink.Message{encodeLinkInfo(t, *tt.li)},
 			})
 
-			li, err := c.LinkInfo(tt.r)
+			li, err := c.LinkInfo(tt.ifi)
 			if err != nil {
 				t.Fatalf("failed to get link info: %v", err)
 			}
@@ -209,8 +219,10 @@ func TestLinuxClientLinkModes(t *testing.T) {
 			name: "OK",
 			lms: []*LinkMode{
 				{
-					Index:         1,
-					Name:          "eth0",
+					Interface: Interface{
+						Index: 1,
+						Name:  "eth0",
+					},
 					SpeedMegabits: 1000,
 					Ours: []AdvertisedLinkMode{
 						{
@@ -225,8 +237,10 @@ func TestLinuxClientLinkModes(t *testing.T) {
 					Duplex: Half,
 				},
 				{
-					Index:         2,
-					Name:          "eth1",
+					Interface: Interface{
+						Index: 2,
+						Name:  "eth1",
+					},
 					SpeedMegabits: 10000,
 					Ours: []AdvertisedLinkMode{
 						{
@@ -276,42 +290,48 @@ func TestLinuxClientLinkModes(t *testing.T) {
 func TestLinuxClientLinkMode(t *testing.T) {
 	tests := []struct {
 		name  string
-		r     Request
+		ifi   Interface
 		attrs func(ae *netlink.AttributeEncoder)
 		li    *LinkMode
 	}{
 		{
 			name:  "by index",
-			r:     Request{Index: 1},
+			ifi:   Interface{Index: 1},
 			attrs: requestIndex(unix.ETHTOOL_A_LINKMODES_HEADER),
 			li: &LinkMode{
-				Index:         1,
-				Name:          "eth0",
+				Interface: Interface{
+					Index: 1,
+					Name:  "eth0",
+				},
 				SpeedMegabits: 1000,
 				Duplex:        Half,
 			},
 		},
 		{
 			name:  "by name",
-			r:     Request{Name: "eth1"},
+			ifi:   Interface{Name: "eth1"},
 			attrs: requestName(unix.ETHTOOL_A_LINKMODES_HEADER),
 			li: &LinkMode{
-				Index:         2,
-				Name:          "eth1",
+				Interface: Interface{
+					Index: 2,
+					Name:  "eth1",
+				},
 				SpeedMegabits: 10000,
 				Duplex:        Full,
 			},
 		},
 		{
 			name: "both",
-			r: Request{
+			ifi: Interface{
 				Index: 2,
 				Name:  "eth1",
 			},
 			attrs: requestBoth(unix.ETHTOOL_A_LINKMODES_HEADER),
 			li: &LinkMode{
-				Index:         2,
-				Name:          "eth1",
+				Interface: Interface{
+					Index: 2,
+					Name:  "eth1",
+				},
 				SpeedMegabits: 10000,
 				Duplex:        Full,
 			},
@@ -328,7 +348,7 @@ func TestLinuxClientLinkMode(t *testing.T) {
 				Messages: []genetlink.Message{encodeLinkMode(t, *tt.li)},
 			})
 
-			li, err := c.LinkMode(tt.r)
+			li, err := c.LinkMode(tt.ifi)
 			if err != nil {
 				t.Fatalf("failed to get link mode: %v", err)
 			}
@@ -349,13 +369,17 @@ func TestLinuxClientWakeOnLANs(t *testing.T) {
 			name: "OK",
 			wols: []*WakeOnLAN{
 				{
-					Index: 1,
-					Name:  "eth0",
+					Interface: Interface{
+						Index: 1,
+						Name:  "eth0",
+					},
 					Modes: Magic | MagicSecure,
 				},
 				{
-					Index: 2,
-					Name:  "eth1",
+					Interface: Interface{
+						Index: 2,
+						Name:  "eth1",
+					},
 					Modes: Magic,
 				},
 			},
@@ -394,46 +418,52 @@ func TestLinuxClientWakeOnLANs(t *testing.T) {
 func TestLinuxClientWakeOnLAN(t *testing.T) {
 	tests := []struct {
 		name       string
-		r          Request
+		ifi        Interface
 		attrs      func(ae *netlink.AttributeEncoder)
 		wol        WakeOnLAN
 		nlErr, err error
 	}{
 		{
 			name:  "EPERM",
-			r:     Request{Index: 1},
+			ifi:   Interface{Index: 1},
 			attrs: requestIndex(unix.ETHTOOL_A_WOL_HEADER),
 			nlErr: genltest.Error(int(unix.EPERM)),
 			err:   os.ErrPermission,
 		},
 		{
 			name:  "ok by index",
-			r:     Request{Index: 1},
+			ifi:   Interface{Index: 1},
 			attrs: requestIndex(unix.ETHTOOL_A_WOL_HEADER),
 			wol: WakeOnLAN{
-				Index: 1,
-				Name:  "eth0",
+				Interface: Interface{
+					Index: 1,
+					Name:  "eth0",
+				},
 			},
 		},
 		{
 			name:  "ok by name",
-			r:     Request{Name: "eth1"},
+			ifi:   Interface{Name: "eth1"},
 			attrs: requestName(unix.ETHTOOL_A_WOL_HEADER),
 			wol: WakeOnLAN{
-				Index: 2,
-				Name:  "eth1",
+				Interface: Interface{
+					Index: 2,
+					Name:  "eth1",
+				},
 			},
 		},
 		{
 			name: "ok both",
-			r: Request{
+			ifi: Interface{
 				Index: 2,
 				Name:  "eth1",
 			},
 			attrs: requestBoth(unix.ETHTOOL_A_WOL_HEADER),
 			wol: WakeOnLAN{
-				Index: 2,
-				Name:  "eth1",
+				Interface: Interface{
+					Index: 2,
+					Name:  "eth1",
+				},
 			},
 		},
 	}
@@ -449,7 +479,7 @@ func TestLinuxClientWakeOnLAN(t *testing.T) {
 				Error:    tt.nlErr,
 			})
 
-			wol, err := c.WakeOnLAN(tt.r)
+			wol, err := c.WakeOnLAN(tt.ifi)
 			if err != nil {
 				if tt.err != nil {
 					// This test expects an error, check it and skip the rest
@@ -473,8 +503,10 @@ func TestLinuxClientWakeOnLAN(t *testing.T) {
 
 func TestLinuxClientSetWakeOnLAN(t *testing.T) {
 	wol := WakeOnLAN{
-		Index: 2,
-		Name:  "eth1",
+		Interface: Interface{
+			Index: 2,
+			Name:  "eth1",
+		},
 		Modes: Unicast | Magic,
 	}
 
@@ -486,7 +518,7 @@ func TestLinuxClientSetWakeOnLAN(t *testing.T) {
 	}{
 		{
 			name:  "EPERM",
-			wol:   WakeOnLAN{Index: 1},
+			wol:   WakeOnLAN{Interface: Interface{Index: 1}},
 			attrs: requestIndex(unix.ETHTOOL_A_WOL_HEADER),
 			nlErr: genltest.Error(int(unix.EPERM)),
 			err:   os.ErrPermission,
@@ -572,8 +604,8 @@ func encodeLinkInfo(t *testing.T, li LinkInfo) genetlink.Message {
 	return genetlink.Message{
 		Data: encode(t, func(ae *netlink.AttributeEncoder) {
 			ae.Nested(unix.ETHTOOL_A_LINKINFO_HEADER, func(nae *netlink.AttributeEncoder) error {
-				nae.Uint32(unix.ETHTOOL_A_HEADER_DEV_INDEX, uint32(li.Index))
-				nae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, li.Name)
+				nae.Uint32(unix.ETHTOOL_A_HEADER_DEV_INDEX, uint32(li.Interface.Index))
+				nae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, li.Interface.Name)
 				return nil
 			})
 
@@ -588,8 +620,8 @@ func encodeLinkMode(t *testing.T, lm LinkMode) genetlink.Message {
 	return genetlink.Message{
 		Data: encode(t, func(ae *netlink.AttributeEncoder) {
 			ae.Nested(unix.ETHTOOL_A_LINKMODES_HEADER, func(nae *netlink.AttributeEncoder) error {
-				nae.Uint32(unix.ETHTOOL_A_HEADER_DEV_INDEX, uint32(lm.Index))
-				nae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, lm.Name)
+				nae.Uint32(unix.ETHTOOL_A_HEADER_DEV_INDEX, uint32(lm.Interface.Index))
+				nae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, lm.Interface.Name)
 				return nil
 			})
 
@@ -619,8 +651,8 @@ func encodeWOL(t *testing.T, wol WakeOnLAN) genetlink.Message {
 	return genetlink.Message{
 		Data: encode(t, func(ae *netlink.AttributeEncoder) {
 			ae.Nested(unix.ETHTOOL_A_WOL_HEADER, func(nae *netlink.AttributeEncoder) error {
-				nae.Uint32(unix.ETHTOOL_A_HEADER_DEV_INDEX, uint32(wol.Index))
-				nae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, wol.Name)
+				nae.Uint32(unix.ETHTOOL_A_HEADER_DEV_INDEX, uint32(wol.Interface.Index))
+				nae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, wol.Interface.Name)
 				return nil
 			})
 
