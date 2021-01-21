@@ -18,6 +18,8 @@ func (c *client) LinkInfos() ([]*LinkInfo, error)           { return nil, errUns
 func (c *client) LinkInfo(_ Interface) (*LinkInfo, error)   { return nil, errUnsupported }
 func (c *client) LinkModes() ([]*LinkMode, error)           { return nil, errUnsupported }
 func (c *client) LinkMode(_ Interface) (*LinkMode, error)   { return nil, errUnsupported }
+func (c *client) LinkStates() ([]*LinkState, error)         { return nil, errUnsupported }
+func (c *client) LinkState(_ Interface) (*LinkState, error) { return nil, errUnsupported }
 func (c *client) WakeOnLANs() ([]*WakeOnLAN, error)         { return nil, errUnsupported }
 func (c *client) WakeOnLAN(_ Interface) (*WakeOnLAN, error) { return nil, errUnsupported }
 func (c *client) SetWakeOnLAN(_ WakeOnLAN) error            { return errUnsupported }
