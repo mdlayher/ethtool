@@ -11,6 +11,8 @@ import (
 // platforms.
 var errUnsupported = fmt.Errorf("ethtool: this library is not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 
+func (*Error) Is(_ error) bool { return false }
+
 type client struct{}
 
 func newClient() (*client, error)                           { return nil, errUnsupported }

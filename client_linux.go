@@ -34,6 +34,11 @@ func newClient() (*client, error) {
 		return nil, err
 	}
 
+	// Report extended acknowledgement errors to the caller.
+	if err := conn.SetOption(netlink.ExtendedAcknowledge, true); err != nil {
+		return nil, err
+	}
+
 	c, err := initClient(conn)
 	if err != nil {
 		_ = conn.Close()
@@ -61,9 +66,6 @@ func initClient(c *genetlink.Conn) (*client, error) {
 	if monitorID == 0 {
 		return nil, errors.New("ethtool: could not find monitor multicast group ID")
 	}
-
-	// TODO(mdlayher): look into what exactly the ethtool interface does with
-	// extended acknowledgements and consider setting them there.
 
 	return &client{
 		c:         c,
@@ -250,8 +252,7 @@ func (wol WakeOnLAN) encode(ae *netlink.AttributeEncoder) {
 	})
 }
 
-// get performs a request/response interaction with ethtool netlink and enforces
-// some of the API contracts regarding os.ErrNotExist.
+// get performs a request/response interaction with ethtool netlink.
 func (c *client) get(
 	header uint16,
 	cmd uint8,
@@ -302,24 +303,17 @@ func (c *client) get(
 	// the kernel which doesn't seem useful as of now.
 	msgs, err := c.execute(cmd, flags, ae)
 	if err != nil {
-		// All *netlink.Errors with system call errnos must be unpacked to
-		// operating system-independent Go errors such as those found in
-		// os.Err*.
-
-		// If the queried interface is not supported by the ethtool
-		// APIs (EOPNOTSUPP) or does not exist at all (ENODEV) we return "not
-		// exist".
-		if errors.Is(err, unix.EOPNOTSUPP) || errors.Is(err, unix.ENODEV) {
-			return nil, os.ErrNotExist
+		// Unpack the extended acknowledgement error message if possible so the
+		// caller doesn't have to unpack it themselves.
+		var msg string
+		if oerr, ok := err.(*netlink.OpError); ok {
+			msg = oerr.Message
 		}
 
-		// Set calls and occasionally Get (such as WakeOnLAN) require elevated
-		// privileges.
-		if errors.Is(err, unix.EPERM) {
-			return nil, os.ErrPermission
+		return nil, &Error{
+			Message: msg,
+			Err:     err,
 		}
-
-		return nil, err
 	}
 
 	return msgs, nil
@@ -346,6 +340,22 @@ func (c *client) execute(cmd uint8, flags netlink.HeaderFlags, ae *netlink.Attri
 		c.family,
 		netlink.Request|flags,
 	)
+}
+
+// Is enables Error comparison with sentinel errors that are part of the
+// Client's API contract such as os.ErrNotExist and os.ErrPermission.
+func (e *Error) Is(target error) bool {
+	switch target {
+	case os.ErrNotExist:
+		// The queried interface is not supported by the ethtool APIs
+		// (EOPNOTSUPP) or does not exist at all (ENODEV).
+		return errors.Is(e.Err, unix.EOPNOTSUPP) || errors.Is(e.Err, unix.ENODEV)
+	case os.ErrPermission:
+		// The caller lacks permission to perform an operation.
+		return errors.Is(e.Err, unix.EPERM)
+	default:
+		return false
+	}
 }
 
 // parseLinkInfo parses LinkInfo structures from a slice of generic netlink

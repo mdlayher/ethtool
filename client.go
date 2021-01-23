@@ -5,6 +5,20 @@ import "fmt"
 //go:generate stringer -type=Duplex,Port -output=string.go
 //go:generate go run mklinkmodes.go
 
+// An Error is an error value produced by the kernel due to a bad ethtool
+// netlink request. Typically the Err will be of type *netlink.OpError.
+type Error struct {
+	Message string
+	Err     error
+}
+
+// Error implements error.
+func (e *Error) Error() string {
+	// This typically wraps a *netlink.OpError which will contain the error
+	// string anyway, so just return the inner error's string.
+	return e.Err.Error()
+}
+
 // A Client can manipulate the ethtool netlink interface.
 type Client struct {
 	// The operating system-specific client.
