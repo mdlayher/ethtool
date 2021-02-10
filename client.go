@@ -5,6 +5,12 @@ import "fmt"
 //go:generate stringer -type=Duplex,Port -output=string.go
 //go:generate go run mklinkmodes.go
 
+var (
+	_ error = &Error{}
+	// Ensure compatibility with Go 1.13+ errors package.
+	_ interface{ Unwrap() error } = &Error{}
+)
+
 // An Error is an error value produced by the kernel due to a bad ethtool
 // netlink request. Typically the Err will be of type *netlink.OpError.
 type Error struct {
@@ -18,6 +24,9 @@ func (e *Error) Error() string {
 	// string anyway, so just return the inner error's string.
 	return e.Err.Error()
 }
+
+// Unwrap unwraps the internal Err field for use with errors.Unwrap.
+func (e *Error) Unwrap() error { return e.Err }
 
 // A Client can manipulate the ethtool netlink interface.
 type Client struct {
