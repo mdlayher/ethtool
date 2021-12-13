@@ -35,9 +35,15 @@ func newClient() (*client, error) {
 		return nil, err
 	}
 
-	// Report extended acknowledgement errors to the caller.
-	if err := conn.SetOption(netlink.ExtendedAcknowledge, true); err != nil {
-		return nil, err
+	// Apply quality of life improvement options on a best-effort basis when
+	// the kernel is new enough to support those options.
+	for _, o := range []netlink.ConnOption{
+		netlink.ExtendedAcknowledge,
+		netlink.GetStrictCheck,
+	} {
+		if err := conn.SetOption(o, true); err != nil && !errors.Is(err, unix.ENOPROTOOPT) {
+			return nil, err
+		}
 	}
 
 	c, err := initClient(conn)
