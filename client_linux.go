@@ -42,6 +42,7 @@ func newClient() (*client, error) {
 		netlink.GetStrictCheck,
 	} {
 		if err := conn.SetOption(o, true); err != nil && !errors.Is(err, unix.ENOPROTOOPT) {
+			_ = conn.Close()
 			return nil, err
 		}
 	}
