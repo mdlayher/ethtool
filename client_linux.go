@@ -30,21 +30,11 @@ type client struct {
 
 // newClient opens a generic netlink connection to the ethtool family.
 func newClient() (*client, error) {
-	conn, err := genetlink.Dial(nil)
+	// ethtool is a reasonably new genetlink family and anyone using its API
+	// should support the Strict socket options set.
+	conn, err := genetlink.Dial(&netlink.Config{Strict: true})
 	if err != nil {
 		return nil, err
-	}
-
-	// Apply quality of life improvement options on a best-effort basis when
-	// the kernel is new enough to support those options.
-	for _, o := range []netlink.ConnOption{
-		netlink.ExtendedAcknowledge,
-		netlink.GetStrictCheck,
-	} {
-		if err := conn.SetOption(o, true); err != nil && !errors.Is(err, unix.ENOPROTOOPT) {
-			_ = conn.Close()
-			return nil, err
-		}
 	}
 
 	c, err := initClient(conn)
