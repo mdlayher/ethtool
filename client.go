@@ -99,6 +99,14 @@ type LinkMode struct {
 	Duplex        Duplex
 }
 
+// LinkModeUpdate contains an update to the link mode information
+// for an Ethernet interface.
+type LinkModeUpdate struct {
+	SpeedMegabits *int
+	Ours, Peer    []AdvertisedLinkMode
+	Duplex        *Duplex
+}
+
 // A Duplex is the link duplex type for a LinkMode structure.
 type Duplex int
 
@@ -129,6 +137,13 @@ func (c *Client) LinkModes() ([]*LinkMode, error) {
 // returned.
 func (c *Client) LinkMode(ifi Interface) (*LinkMode, error) {
 	return c.c.LinkMode(ifi)
+}
+
+// UpdateLinkMode updates link mode information for the specified Interface.
+//
+// Specifically, the interface is brought to agreement with the non-nil fields of lmu.
+func (c *Client) UpdateLinkMode(ifi Interface, lmu *LinkModeUpdate) error {
+	return c.c.UpdateLinkMode(ifi, lmu)
 }
 
 // LinkState contains link state information for an Ethernet interface.

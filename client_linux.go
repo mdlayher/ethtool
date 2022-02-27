@@ -147,6 +147,35 @@ func (c *client) linkMode(flags netlink.HeaderFlags, ifi Interface) ([]*LinkMode
 	return parseLinkModes(msgs)
 }
 
+// UpdateLinkMode updates link mode information for a single ethtool-supported interface.
+func (c *client) UpdateLinkMode(ifi Interface, lmu *LinkModeUpdate) error {
+	_, err := c.get(
+		unix.ETHTOOL_A_LINKMODES_HEADER,
+		unix.ETHTOOL_MSG_LINKMODES_SET,
+		netlink.Acknowledge,
+		ifi,
+		lmu.encode,
+	)
+	return err
+}
+
+// encode packs LinkModeUpdate data into the appropriate netlink attributes for the
+// encoder.
+func (lmu *LinkModeUpdate) encode(ae *netlink.AttributeEncoder) {
+	if lmu.SpeedMegabits != nil {
+		ae.Uint32(unix.ETHTOOL_A_LINKMODES_SPEED, uint32(*lmu.SpeedMegabits))
+	}
+	if lmu.Ours != nil {
+		ae.Nested(unix.ETHTOOL_A_LINKMODES_OURS, packALMs(lmu.Ours))
+	}
+	if lmu.Peer != nil {
+		ae.Nested(unix.ETHTOOL_A_LINKMODES_PEER, packALMs(lmu.Peer))
+	}
+	if lmu.Duplex != nil {
+		ae.Uint8(unix.ETHTOOL_A_LINKMODES_DUPLEX, uint8(*lmu.Duplex))
+	}
+}
+
 // LinkStates fetches link state data for all ethtool-supported links.
 func (c *client) LinkStates() ([]*LinkState, error) {
 	return c.linkState(netlink.Dump, Interface{})
@@ -558,6 +587,34 @@ func parseInterface(ifi *Interface) func(*netlink.AttributeDecoder) error {
 				(*ifi).Name = ad.String()
 			}
 		}
+		return nil
+	}
+}
+
+// packALMBitset encodes given AdvertisedLinkModes as a compact bitset.
+func packALMBitset(alms []AdvertisedLinkMode) func() ([]byte, error) {
+	return func() ([]byte, error) {
+		// Calculate the number of words necessary for the bitset, then
+		// multiply by 4 for bytes.
+		b := make([]byte, ((len(linkModes)+31)/32)*4)
+
+		for _, alm := range alms {
+			byteIndex := alm.Index / 8
+			bitIndex := alm.Index % 8
+			b[byteIndex] |= 1 << bitIndex
+		}
+
+		return b, nil
+	}
+}
+
+// packALMs encodes given AdvertisedLinkModes.
+func packALMs(alms []AdvertisedLinkMode) func(*netlink.AttributeEncoder) error {
+	return func(nae *netlink.AttributeEncoder) error {
+		fn := packALMBitset(alms)
+		nae.Uint32(unix.ETHTOOL_A_BITSET_SIZE, uint32(len(alms)))
+		nae.Do(unix.ETHTOOL_A_BITSET_VALUE, fn)
+		nae.Do(unix.ETHTOOL_A_BITSET_MASK, fn)
 		return nil
 	}
 }

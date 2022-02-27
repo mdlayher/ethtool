@@ -758,18 +758,8 @@ func encodeLinkMode(t *testing.T, lm LinkMode) genetlink.Message {
 
 			ae.Uint32(unix.ETHTOOL_A_LINKMODES_SPEED, uint32(lm.SpeedMegabits))
 
-			packALMs := func(typ uint16, alms []AdvertisedLinkMode) {
-				ae.Nested(typ, func(nae *netlink.AttributeEncoder) error {
-					fn := packALMBitset(alms)
-					nae.Uint32(unix.ETHTOOL_A_BITSET_SIZE, uint32(len(linkModes)))
-					nae.Do(unix.ETHTOOL_A_BITSET_VALUE, fn)
-					nae.Do(unix.ETHTOOL_A_BITSET_MASK, fn)
-					return nil
-				})
-			}
-
-			packALMs(unix.ETHTOOL_A_LINKMODES_OURS, lm.Ours)
-			packALMs(unix.ETHTOOL_A_LINKMODES_PEER, lm.Peer)
+			ae.Nested(unix.ETHTOOL_A_LINKMODES_OURS, packALMs(lm.Ours))
+			ae.Nested(unix.ETHTOOL_A_LINKMODES_PEER, packALMs(lm.Peer))
 
 			ae.Uint8(unix.ETHTOOL_A_LINKMODES_DUPLEX, uint8(lm.Duplex))
 		}),
@@ -811,22 +801,6 @@ func encodeWOL(t *testing.T, wol WakeOnLAN) genetlink.Message {
 
 			wol.encode(ae)
 		}),
-	}
-}
-
-func packALMBitset(alms []AdvertisedLinkMode) func() ([]byte, error) {
-	return func() ([]byte, error) {
-		// Calculate the number of words necessary for the bitset, then
-		// multiply by 4 for bytes.
-		b := make([]byte, ((len(linkModes)+31)/32)*4)
-
-		for _, alm := range alms {
-			byteIndex := alm.Index / 8
-			bitIndex := alm.Index % 8
-			b[byteIndex] |= 1 << bitIndex
-		}
-
-		return b, nil
 	}
 }
 
