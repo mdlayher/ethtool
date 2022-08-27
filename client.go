@@ -1,6 +1,8 @@
 package ethtool
 
-import "fmt"
+import (
+	"fmt"
+)
 
 //go:generate stringer -type=Duplex,Port -output=string.go
 //go:generate go run mklinkmodes.go
@@ -151,6 +153,42 @@ func (c *Client) LinkStates() ([]*LinkState, error) {
 func (c *Client) LinkState(ifi Interface) (*LinkState, error) {
 	return c.c.LinkState(ifi)
 }
+
+// FEC fetches the forward error correction (FEC) setting for the specified
+// Interface.
+func (c *Client) FEC(ifi Interface) (*FEC, error) {
+	return c.c.FEC(ifi)
+}
+
+// SetFEC sets the forward error correction (FEC) parameters for the Interface
+// in fec.
+//
+// Setting FEC parameters requires elevated privileges and if the caller
+// does not have permission, an error compatible with errors.Is(err,
+// os.ErrPermission) will be returned.
+//
+// If the requested device does not exist or is not supported by the ethtool
+// interface, an error compatible with errors.Is(err, os.ErrNotExist) will be
+// returned.
+func (c *Client) SetFEC(fec FEC) error {
+	return c.c.SetFEC(fec)
+}
+
+// A FEC contains the forward error correction (FEC) parameters for an
+// interface.
+type FEC struct {
+	Interface Interface
+	Modes     FECModes
+	Active    FECMode
+	Auto      bool
+}
+
+// A FECMode is a FEC mode bit value (single element bitmask) specifying the
+// active mode of an interface.
+type FECMode int
+
+// A FECModes is a FEC mode bitmask of mode(s) supported by an interface.
+type FECModes FECMode
 
 // A WakeOnLAN contains the Wake-on-LAN parameters for an interface.
 type WakeOnLAN struct {

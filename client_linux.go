@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/mdlayher/genetlink"
 	"github.com/mdlayher/netlink"
@@ -183,6 +184,150 @@ func (c *client) linkState(flags netlink.HeaderFlags, ifi Interface) ([]*LinkSta
 	return parseLinkState(msgs)
 }
 
+// FEC fetches the forward error correction (FEC) setting for a single
+// ethtool-supported link.
+func (c *client) FEC(ifi Interface) (*FEC, error) {
+	fecs, err := c.fec(0, ifi)
+	if err != nil {
+		return nil, err
+	}
+
+	if l := len(fecs); l != 1 {
+		panicf("ethtool: unexpected number of FEC messages for request index: %d, name: %q: %d",
+			ifi.Index, ifi.Name, l)
+	}
+
+	return fecs[0], nil
+}
+
+// fec is the shared logic for Client.FEC(s).
+func (c *client) fec(flags netlink.HeaderFlags, ifi Interface) ([]*FEC, error) {
+	msgs, err := c.get(
+		ETHTOOL_A_FEC_HEADER,
+		unix.ETHTOOL_MSG_FEC_GET,
+		flags,
+		ifi,
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseFEC(msgs)
+}
+
+// SetFEC configures forward error correction (FEC) parameters for a single
+// ethtool-supported interface.
+func (c *client) SetFEC(fec FEC) error {
+	_, err := c.get(
+		ETHTOOL_A_FEC_HEADER,
+		unix.ETHTOOL_MSG_FEC_SET,
+		netlink.Acknowledge,
+		fec.Interface,
+		fec.encode,
+	)
+	return err
+}
+
+// encode packs FEC data into the appropriate netlink attributes for the
+// encoder.
+func (fec FEC) encode(ae *netlink.AttributeEncoder) {
+	var bits []string
+
+	if fec.Modes&unix.ETHTOOL_FEC_OFF != 0 {
+		bits = append(bits, "None")
+	}
+
+	if fec.Modes&unix.ETHTOOL_FEC_RS != 0 {
+		bits = append(bits, "RS")
+	}
+
+	if fec.Modes&unix.ETHTOOL_FEC_BASER != 0 {
+		bits = append(bits, "BASER")
+	}
+
+	if fec.Modes&unix.ETHTOOL_FEC_LLRS != 0 {
+		bits = append(bits, "LLRS")
+	}
+
+	ae.Nested(ETHTOOL_A_FEC_MODES, func(nae *netlink.AttributeEncoder) error {
+		// Overwrite the bits instead of merging them.
+		nae.Flag(unix.ETHTOOL_A_BITSET_NOMASK, true)
+
+		nae.Nested(unix.ETHTOOL_A_BITSET_BITS, func(nae *netlink.AttributeEncoder) error {
+			for _, bit := range bits {
+				nae.Nested(unix.ETHTOOL_A_BITSET_BITS_BIT, func(nae *netlink.AttributeEncoder) error {
+					nae.String(unix.ETHTOOL_A_BITSET_BIT_NAME, bit)
+					return nil
+				})
+			}
+			return nil
+		})
+		return nil
+	})
+
+	var auto uint8
+	if fec.Auto {
+		auto = 1
+	}
+	ae.Uint8(ETHTOOL_A_FEC_AUTO, auto)
+}
+
+// Supported returns the supported/configured FEC modes. Some drivers report
+// supported, others configured. See
+// https://kernel.googlesource.com/pub/scm/network/ethtool/ethtool/+/2b3ddcb35357ae34ed0a6ae2bb006dcdaec353a9
+func (f *FEC) Supported() FECModes {
+	result := f.Modes
+	if f.Auto {
+		result |= unix.ETHTOOL_FEC_AUTO
+	}
+	return result
+}
+
+// String implements fmt.Stringer.
+func (f FECMode) String() string {
+	switch f {
+	case unix.ETHTOOL_FEC_AUTO:
+		return "Auto"
+	case unix.ETHTOOL_FEC_BASER:
+		return "BaseR"
+	case unix.ETHTOOL_FEC_LLRS:
+		return "LLRS"
+	case unix.ETHTOOL_FEC_NONE:
+		return "Off"
+	case unix.ETHTOOL_FEC_OFF:
+		return "Off"
+	case unix.ETHTOOL_FEC_RS:
+		return "RS"
+	default:
+		return "<unknown>"
+	}
+}
+
+// String implements fmt.Stringer.
+func (f FECModes) String() string {
+	var modes []string
+	if f&unix.ETHTOOL_FEC_AUTO > 0 {
+		modes = append(modes, "Auto")
+	}
+	if f&unix.ETHTOOL_FEC_BASER > 0 {
+		modes = append(modes, "BaseR")
+	}
+	if f&unix.ETHTOOL_FEC_LLRS > 0 {
+		modes = append(modes, "LLRS")
+	}
+	if f&unix.ETHTOOL_FEC_NONE > 0 {
+		modes = append(modes, "Off")
+	}
+	if f&unix.ETHTOOL_FEC_OFF > 0 {
+		modes = append(modes, "Off")
+	}
+	if f&unix.ETHTOOL_FEC_RS > 0 {
+		modes = append(modes, "RS")
+	}
+	return strings.Join(modes, " ")
+}
+
 // WakeOnLANs fetches Wake-on-LAN information for all ethtool-supported links.
 func (c *client) WakeOnLANs() ([]*WakeOnLAN, error) {
 	return c.wakeOnLAN(netlink.Dump, Interface{})
@@ -284,10 +429,13 @@ func (c *client) get(
 			nae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, ifi.Name)
 		}
 
-		// Unconditionally add the compact bitsets flag since the ethtool
-		// multicast group notifications require the compact format, so we might
-		// as well always use it.
-		nae.Uint32(unix.ETHTOOL_A_HEADER_FLAGS, unix.ETHTOOL_FLAG_COMPACT_BITSETS)
+		// Unconditionally add the compact bitsets flag to all query commands
+		// since the ethtool multicast group notifications require the compact
+		// format, so we might as well always use it.
+		if cmd != unix.ETHTOOL_MSG_FEC_SET &&
+			cmd != unix.ETHTOOL_MSG_WOL_SET {
+			nae.Uint32(unix.ETHTOOL_A_HEADER_FLAGS, unix.ETHTOOL_FLAG_COMPACT_BITSETS)
+		}
 
 		return nil
 	})
@@ -491,6 +639,103 @@ func parseLinkState(msgs []genetlink.Message) ([]*LinkState, error) {
 	}
 
 	return lss, nil
+}
+
+// TODO: get these into x/sys/unix
+const (
+	ETHTOOL_A_FEC_UNSPEC = iota
+	ETHTOOL_A_FEC_HEADER
+	ETHTOOL_A_FEC_MODES
+	ETHTOOL_A_FEC_AUTO
+	ETHTOOL_A_FEC_ACTIVE
+	ETHTOOL_A_FEC_STATS
+)
+
+// parseFEC parses FEC structures from a slice of generic netlink
+// messages.
+func parseFEC(msgs []genetlink.Message) ([]*FEC, error) {
+	fecs := make([]*FEC, 0, len(msgs))
+	for _, m := range msgs {
+		ad, err := netlink.NewAttributeDecoder(m.Data)
+		if err != nil {
+			return nil, err
+		}
+
+		var fec FEC
+		for ad.Next() {
+			switch ad.Type() {
+			case ETHTOOL_A_FEC_HEADER:
+				ad.Nested(parseInterface(&fec.Interface))
+
+			case ETHTOOL_A_FEC_MODES:
+				ad.Nested(parseFECModes(&fec.Modes))
+				if fec.Modes == 0 {
+					fec.Modes |= unix.ETHTOOL_FEC_OFF
+				}
+
+			case ETHTOOL_A_FEC_AUTO:
+				fec.Auto = ad.Uint8() > 0
+
+			case ETHTOOL_A_FEC_ACTIVE:
+				activeBit := ad.Uint32()
+				switch activeBit {
+				case unix.ETHTOOL_LINK_MODE_FEC_NONE_BIT:
+					fec.Active = unix.ETHTOOL_FEC_OFF
+
+				case unix.ETHTOOL_LINK_MODE_FEC_RS_BIT:
+					fec.Active = unix.ETHTOOL_FEC_RS
+
+				case unix.ETHTOOL_LINK_MODE_FEC_BASER_BIT:
+					fec.Active = unix.ETHTOOL_FEC_BASER
+
+				case unix.ETHTOOL_LINK_MODE_FEC_LLRS_BIT:
+					fec.Active = unix.ETHTOOL_FEC_LLRS
+
+				default:
+					return nil, fmt.Errorf("unsupported FEC link mode bit: %d", activeBit)
+				}
+
+			}
+		}
+
+		if err := ad.Err(); err != nil {
+			return nil, err
+		}
+
+		fecs = append(fecs, &fec)
+	}
+
+	return fecs, nil
+}
+
+// parseFECModes decodes an ethtool compact bitset into the input FECModes.
+func parseFECModes(m *FECModes) func(*netlink.AttributeDecoder) error {
+	return func(ad *netlink.AttributeDecoder) error {
+		values, err := newBitset(ad)
+		if err != nil {
+			return err
+		}
+
+		*m = 0
+
+		if values.test(unix.ETHTOOL_LINK_MODE_FEC_NONE_BIT) {
+			*m |= unix.ETHTOOL_FEC_OFF
+		}
+
+		if values.test(unix.ETHTOOL_LINK_MODE_FEC_RS_BIT) {
+			*m |= unix.ETHTOOL_FEC_RS
+		}
+
+		if values.test(unix.ETHTOOL_LINK_MODE_FEC_BASER_BIT) {
+			*m |= unix.ETHTOOL_FEC_BASER
+		}
+
+		if values.test(unix.ETHTOOL_LINK_MODE_FEC_LLRS_BIT) {
+			*m |= unix.ETHTOOL_FEC_LLRS
+		}
+
+		return nil
+	}
 }
 
 // parseWakeOnLAN parses WakeOnLAN structures from a slice of generic netlink
