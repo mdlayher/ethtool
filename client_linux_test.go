@@ -158,7 +158,7 @@ func TestLinuxClientLinkInfo(t *testing.T) {
 		{
 			name:  "by index",
 			ifi:   Interface{Index: 1},
-			attrs: requestIndex(unix.ETHTOOL_A_LINKINFO_HEADER),
+			attrs: requestIndex(unix.ETHTOOL_A_LINKINFO_HEADER, true),
 			li: &LinkInfo{
 				Interface: Interface{
 					Index: 1,
@@ -185,7 +185,7 @@ func TestLinuxClientLinkInfo(t *testing.T) {
 				Index: 2,
 				Name:  "eth1",
 			},
-			attrs: requestBoth(unix.ETHTOOL_A_LINKINFO_HEADER),
+			attrs: requestBoth(unix.ETHTOOL_A_LINKINFO_HEADER, true),
 			li: &LinkInfo{
 				Interface: Interface{
 					Index: 2,
@@ -305,7 +305,7 @@ func TestLinuxClientLinkMode(t *testing.T) {
 		{
 			name:  "by index",
 			ifi:   Interface{Index: 1},
-			attrs: requestIndex(unix.ETHTOOL_A_LINKMODES_HEADER),
+			attrs: requestIndex(unix.ETHTOOL_A_LINKMODES_HEADER, true),
 			li: &LinkMode{
 				Interface: Interface{
 					Index: 1,
@@ -334,7 +334,7 @@ func TestLinuxClientLinkMode(t *testing.T) {
 				Index: 2,
 				Name:  "eth1",
 			},
-			attrs: requestBoth(unix.ETHTOOL_A_LINKMODES_HEADER),
+			attrs: requestBoth(unix.ETHTOOL_A_LINKMODES_HEADER, true),
 			li: &LinkMode{
 				Interface: Interface{
 					Index: 2,
@@ -432,7 +432,7 @@ func TestLinuxClientLinkState(t *testing.T) {
 		{
 			name:  "by index",
 			ifi:   Interface{Index: 1},
-			attrs: requestIndex(unix.ETHTOOL_A_LINKSTATE_HEADER),
+			attrs: requestIndex(unix.ETHTOOL_A_LINKSTATE_HEADER, true),
 			ls: &LinkState{
 				Interface: Interface{
 					Index: 1,
@@ -458,7 +458,7 @@ func TestLinuxClientLinkState(t *testing.T) {
 				Index: 2,
 				Name:  "eth1",
 			},
-			attrs: requestBoth(unix.ETHTOOL_A_LINKSTATE_HEADER),
+			attrs: requestBoth(unix.ETHTOOL_A_LINKSTATE_HEADER, true),
 			ls: &LinkState{
 				Interface: Interface{
 					Index: 2,
@@ -557,14 +557,14 @@ func TestLinuxClientWakeOnLAN(t *testing.T) {
 		{
 			name:  "EPERM",
 			ifi:   Interface{Index: 1},
-			attrs: requestIndex(unix.ETHTOOL_A_WOL_HEADER),
+			attrs: requestIndex(unix.ETHTOOL_A_WOL_HEADER, true),
 			nlErr: genltest.Error(int(unix.EPERM)),
 			err:   os.ErrPermission,
 		},
 		{
 			name:  "ok by index",
 			ifi:   Interface{Index: 1},
-			attrs: requestIndex(unix.ETHTOOL_A_WOL_HEADER),
+			attrs: requestIndex(unix.ETHTOOL_A_WOL_HEADER, true),
 			wol: WakeOnLAN{
 				Interface: Interface{
 					Index: 1,
@@ -589,7 +589,7 @@ func TestLinuxClientWakeOnLAN(t *testing.T) {
 				Index: 2,
 				Name:  "eth1",
 			},
-			attrs: requestBoth(unix.ETHTOOL_A_WOL_HEADER),
+			attrs: requestBoth(unix.ETHTOOL_A_WOL_HEADER, true),
 			wol: WakeOnLAN{
 				Interface: Interface{
 					Index: 2,
@@ -650,7 +650,7 @@ func TestLinuxClientSetWakeOnLAN(t *testing.T) {
 		{
 			name:  "EPERM",
 			wol:   WakeOnLAN{Interface: Interface{Index: 1}},
-			attrs: requestIndex(unix.ETHTOOL_A_WOL_HEADER),
+			attrs: requestIndex(unix.ETHTOOL_A_WOL_HEADER, false),
 			nlErr: genltest.Error(int(unix.EPERM)),
 			err:   os.ErrPermission,
 		},
@@ -659,7 +659,7 @@ func TestLinuxClientSetWakeOnLAN(t *testing.T) {
 			attrs: func(ae *netlink.AttributeEncoder) {
 				// Apply the request header followed immediately by the rest of
 				// the encoded WOL attributes.
-				requestBoth(unix.ETHTOOL_A_WOL_HEADER)(ae)
+				requestBoth(unix.ETHTOOL_A_WOL_HEADER, false)(ae)
 				wol.encode(ae)
 			},
 			wol: wol,
@@ -694,11 +694,13 @@ func requestHeader(typ uint16) func(*netlink.AttributeEncoder) {
 	}
 }
 
-func requestIndex(typ uint16) func(*netlink.AttributeEncoder) {
+func requestIndex(typ uint16, compactBitsets bool) func(*netlink.AttributeEncoder) {
 	return func(ae *netlink.AttributeEncoder) {
 		ae.Nested(typ, func(nae *netlink.AttributeEncoder) error {
 			nae.Uint32(unix.ETHTOOL_A_HEADER_DEV_INDEX, 1)
-			headerFlags(nae)
+			if compactBitsets {
+				headerFlags(nae)
+			}
 			return nil
 		})
 	}
@@ -714,12 +716,14 @@ func requestName(typ uint16) func(*netlink.AttributeEncoder) {
 	}
 }
 
-func requestBoth(typ uint16) func(*netlink.AttributeEncoder) {
+func requestBoth(typ uint16, compactBitsets bool) func(*netlink.AttributeEncoder) {
 	return func(ae *netlink.AttributeEncoder) {
 		ae.Nested(typ, func(nae *netlink.AttributeEncoder) error {
 			nae.Uint32(unix.ETHTOOL_A_HEADER_DEV_INDEX, 2)
 			nae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, "eth1")
-			headerFlags(nae)
+			if compactBitsets {
+				headerFlags(nae)
+			}
 			return nil
 		})
 	}
@@ -848,9 +852,10 @@ func encode(t *testing.T, fn func(ae *netlink.AttributeEncoder)) []byte {
 // parameters and canned response messages and/or errors.
 type clientTest struct {
 	// Expected request parameters.
-	HeaderFlags netlink.HeaderFlags
-	Command     uint8
-	Attributes  func(*netlink.AttributeEncoder)
+	HeaderFlags       netlink.HeaderFlags
+	Command           uint8
+	Attributes        func(*netlink.AttributeEncoder)
+	EncodedAttributes []byte
 
 	// Response data. If Error is set, Messages is unused.
 	Messages []genetlink.Message
@@ -880,7 +885,11 @@ func testClient(t *testing.T, ct clientTest) *Client {
 		}
 
 		// Verify the caller's request data.
-		if diff := cmp.Diff(encode(t, ct.Attributes), greq.Data); diff != "" {
+		encoded := ct.EncodedAttributes
+		if encoded == nil {
+			encoded = encode(t, ct.Attributes)
+		}
+		if diff := cmp.Diff(encoded, greq.Data); diff != "" {
 			t.Fatalf("unexpected request header bytes (-want +got):\n%s", diff)
 		}
 
@@ -918,4 +927,41 @@ func baseClient(t *testing.T, fn genltest.Func) *Client {
 	}
 
 	return &Client{c: c}
+}
+
+func TestFEC(t *testing.T) {
+	// captured from wireshark on the nlmon0 interface when running:
+	//
+	// sudo ethtool --set-fec enp7s0 encoding rs
+	//
+	// corresponding strace:
+	//
+	// sendto(3<socket:[12533277]>, [{nlmsg_len=68, nlmsg_type=ethtool, nlmsg_flags=NLM_F_REQUEST|NLM_F_ACK, nlmsg_seq=2, nlmsg_pid=0},
+	// "\x1e\x01\x00\x00\x10\x00\x01\x80"
+	// "\x0b\x00\x02\x00\x65\x6e\x70\x37\x73\x30\x00\x00\x18\x00\x02\x80\x04\x00\x01\x00\x10\x00\x03\x80\x0c\x00\x01\x80\x07\x00\x02\x00\x52\x53\x00\x00\x05\x00\x03\x00\x00\x00\x00\x00"], 68, 0, {sa_family=AF_NETLINK, nl_pid=0, nl_groups=00000000}, 12) = 68
+
+	c := testClient(t, clientTest{
+		HeaderFlags:       netlink.Request | netlink.Acknowledge,
+		Command:           unix.ETHTOOL_MSG_FEC_SET,
+		EncodedAttributes: []byte("\x10\x00\x01\x80\x0b\x00\x02\x00\x65\x6e\x70\x37\x73\x30\x00\x00\x18\x00\x02\x80\x04\x00\x01\x00\x10\x00\x03\x80\x0c\x00\x01\x80\x07\x00\x02\x00\x52\x53\x00\x00\x05\x00\x03\x00\x00\x00\x00\x00"),
+
+		Messages: []genetlink.Message{
+			genetlink.Message{
+				Data: nil,
+			},
+		},
+		Error: nil,
+	})
+
+	fec := FEC{
+		Interface: Interface{
+			Name: "enp7s0",
+		},
+		Modes: unix.ETHTOOL_FEC_RS,
+	}
+
+	err := c.SetFEC(fec)
+	if err != nil {
+		t.Fatal(err)
+	}
 }

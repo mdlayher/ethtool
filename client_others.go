@@ -26,4 +26,11 @@ func (c *client) LinkState(_ Interface) (*LinkState, error) { return nil, errUns
 func (c *client) WakeOnLANs() ([]*WakeOnLAN, error)         { return nil, errUnsupported }
 func (c *client) WakeOnLAN(_ Interface) (*WakeOnLAN, error) { return nil, errUnsupported }
 func (c *client) SetWakeOnLAN(_ WakeOnLAN) error            { return errUnsupported }
+func (c *client) FEC(_ Interface) (*FEC, error)             { return nil, errUnsupported }
+func (c *client) SetFEC(_ FEC) error                        { return errUnsupported }
 func (c *client) Close() error                              { return errUnsupported }
+
+func (f *FEC) Supported() FECModes { return 0 }
+
+func (f FECMode) String() string  { return "unsupported" }
+func (f FECModes) String() string { return "unsupported" }

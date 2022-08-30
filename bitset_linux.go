@@ -76,3 +76,9 @@ func (bs *bitset) decode(b []byte) error {
 
 	return nil
 }
+
+// test is like the ethnl_bitmap32_test_bit() function in the Linux kernel: it
+// reports whether the bit with the specified index is set in the bitset.
+func (bs *bitset) test(idx int) bool {
+	return (*bs)[idx/32]&(1<<(idx%32)) != 0
+}
