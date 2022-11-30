@@ -944,24 +944,17 @@ func TestFEC(t *testing.T) {
 		HeaderFlags:       netlink.Request | netlink.Acknowledge,
 		Command:           unix.ETHTOOL_MSG_FEC_SET,
 		EncodedAttributes: []byte("\x10\x00\x01\x80\x0b\x00\x02\x00\x65\x6e\x70\x37\x73\x30\x00\x00\x18\x00\x02\x80\x04\x00\x01\x00\x10\x00\x03\x80\x0c\x00\x01\x80\x07\x00\x02\x00\x52\x53\x00\x00\x05\x00\x03\x00\x00\x00\x00\x00"),
-
-		Messages: []genetlink.Message{
-			genetlink.Message{
-				Data: nil,
-			},
-		},
+		Messages: []genetlink.Message{{
+			Data: nil,
+		}},
 		Error: nil,
 	})
 
-	fec := FEC{
-		Interface: Interface{
-			Name: "enp7s0",
-		},
-		Modes: unix.ETHTOOL_FEC_RS,
-	}
-
-	err := c.SetFEC(fec)
+	err := c.SetFEC(FEC{
+		Interface: Interface{Name: "enp7s0"},
+		Modes:     unix.ETHTOOL_FEC_RS,
+	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("failed to set FEC: %v", err)
 	}
 }
