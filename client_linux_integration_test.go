@@ -5,6 +5,7 @@ package ethtool_test
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -23,6 +24,10 @@ func TestIntegrationClientLinkInfos(t *testing.T) {
 
 	lis, err := c.LinkInfos()
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			t.Skipf("skipping, operation not supported: %v", err)
+		}
+
 		t.Fatalf("failed to fetch link infos: %v", err)
 	}
 
