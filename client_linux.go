@@ -203,7 +203,7 @@ func (c *client) FEC(ifi Interface) (*FEC, error) {
 // fec is the shared logic for Client.FEC(s).
 func (c *client) fec(flags netlink.HeaderFlags, ifi Interface) ([]*FEC, error) {
 	msgs, err := c.get(
-		ETHTOOL_A_FEC_HEADER,
+		_ETHTOOL_A_FEC_HEADER,
 		unix.ETHTOOL_MSG_FEC_GET,
 		flags,
 		ifi,
@@ -220,7 +220,7 @@ func (c *client) fec(flags netlink.HeaderFlags, ifi Interface) ([]*FEC, error) {
 // ethtool-supported interface.
 func (c *client) SetFEC(fec FEC) error {
 	_, err := c.get(
-		ETHTOOL_A_FEC_HEADER,
+		_ETHTOOL_A_FEC_HEADER,
 		unix.ETHTOOL_MSG_FEC_SET,
 		netlink.Acknowledge,
 		fec.Interface,
@@ -250,7 +250,7 @@ func (fec FEC) encode(ae *netlink.AttributeEncoder) {
 		bits = append(bits, "LLRS")
 	}
 
-	ae.Nested(ETHTOOL_A_FEC_MODES, func(nae *netlink.AttributeEncoder) error {
+	ae.Nested(_ETHTOOL_A_FEC_MODES, func(nae *netlink.AttributeEncoder) error {
 		// Overwrite the bits instead of merging them.
 		nae.Flag(unix.ETHTOOL_A_BITSET_NOMASK, true)
 
@@ -270,7 +270,7 @@ func (fec FEC) encode(ae *netlink.AttributeEncoder) {
 	if fec.Auto {
 		auto = 1
 	}
-	ae.Uint8(ETHTOOL_A_FEC_AUTO, auto)
+	ae.Uint8(_ETHTOOL_A_FEC_AUTO, auto)
 }
 
 // Supported returns the supported/configured FEC modes. Some drivers report
@@ -643,12 +643,12 @@ func parseLinkState(msgs []genetlink.Message) ([]*LinkState, error) {
 
 // TODO: get these into x/sys/unix
 const (
-	ETHTOOL_A_FEC_UNSPEC = iota
-	ETHTOOL_A_FEC_HEADER
-	ETHTOOL_A_FEC_MODES
-	ETHTOOL_A_FEC_AUTO
-	ETHTOOL_A_FEC_ACTIVE
-	ETHTOOL_A_FEC_STATS
+	_ETHTOOL_A_FEC_UNSPEC = iota
+	_ETHTOOL_A_FEC_HEADER
+	_ETHTOOL_A_FEC_MODES
+	_ETHTOOL_A_FEC_AUTO
+	_ETHTOOL_A_FEC_ACTIVE
+	_ETHTOOL_A_FEC_STATS
 )
 
 // parseFEC parses FEC structures from a slice of generic netlink
@@ -664,37 +664,28 @@ func parseFEC(msgs []genetlink.Message) ([]*FEC, error) {
 		var fec FEC
 		for ad.Next() {
 			switch ad.Type() {
-			case ETHTOOL_A_FEC_HEADER:
+			case _ETHTOOL_A_FEC_HEADER:
 				ad.Nested(parseInterface(&fec.Interface))
-
-			case ETHTOOL_A_FEC_MODES:
+			case _ETHTOOL_A_FEC_MODES:
 				ad.Nested(parseFECModes(&fec.Modes))
 				if fec.Modes == 0 {
 					fec.Modes |= unix.ETHTOOL_FEC_OFF
 				}
-
-			case ETHTOOL_A_FEC_AUTO:
+			case _ETHTOOL_A_FEC_AUTO:
 				fec.Auto = ad.Uint8() > 0
-
-			case ETHTOOL_A_FEC_ACTIVE:
-				activeBit := ad.Uint32()
-				switch activeBit {
+			case _ETHTOOL_A_FEC_ACTIVE:
+				switch b := ad.Uint32(); b {
 				case unix.ETHTOOL_LINK_MODE_FEC_NONE_BIT:
 					fec.Active = unix.ETHTOOL_FEC_OFF
-
 				case unix.ETHTOOL_LINK_MODE_FEC_RS_BIT:
 					fec.Active = unix.ETHTOOL_FEC_RS
-
 				case unix.ETHTOOL_LINK_MODE_FEC_BASER_BIT:
 					fec.Active = unix.ETHTOOL_FEC_BASER
-
 				case unix.ETHTOOL_LINK_MODE_FEC_LLRS_BIT:
 					fec.Active = unix.ETHTOOL_FEC_LLRS
-
 				default:
-					return nil, fmt.Errorf("unsupported FEC link mode bit: %d", activeBit)
+					return nil, fmt.Errorf("unsupported FEC link mode bit: %d", b)
 				}
-
 			}
 		}
 
