@@ -221,6 +221,11 @@ func TestLinuxClientLinkInfo(t *testing.T) {
 }
 
 func TestLinuxClientLinkModes(t *testing.T) {
+	// See https://github.com/mdlayher/ethtool/issues/12.
+	//
+	// It's likely that the bitset code is incorrect on big endian machines.
+	skipBigEndian(t)
+
 	tests := []struct {
 		name string
 		lms  []*LinkMode
@@ -932,9 +937,7 @@ func baseClient(t *testing.T, fn genltest.Func) *Client {
 }
 
 func TestFEC(t *testing.T) {
-	if binary.ByteOrder(native.Endian) == binary.BigEndian {
-		t.Skipf("skipping, this test requires a little endian machine")
-	}
+	skipBigEndian(t)
 
 	// captured from wireshark on the nlmon0 interface when running:
 	//
@@ -962,5 +965,13 @@ func TestFEC(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("failed to set FEC: %v", err)
+	}
+}
+
+func skipBigEndian(t *testing.T) {
+	t.Helper()
+
+	if binary.ByteOrder(native.Endian) == binary.BigEndian {
+		t.Skip("skipping, this test requires a little endian machine")
 	}
 }
