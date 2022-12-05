@@ -4,11 +4,13 @@
 package ethtool
 
 import (
+	"encoding/binary"
 	"os"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/josharian/native"
 	"github.com/mdlayher/genetlink"
 	"github.com/mdlayher/genetlink/genltest"
 	"github.com/mdlayher/netlink"
@@ -930,6 +932,10 @@ func baseClient(t *testing.T, fn genltest.Func) *Client {
 }
 
 func TestFEC(t *testing.T) {
+	if binary.ByteOrder(native.Endian) == binary.BigEndian {
+		t.Skipf("skipping, this test requires a little endian machine")
+	}
+
 	// captured from wireshark on the nlmon0 interface when running:
 	//
 	// sudo ethtool --set-fec enp7s0 encoding rs
