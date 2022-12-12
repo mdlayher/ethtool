@@ -18,6 +18,10 @@ func TestIntegrationClientLinkInfos(t *testing.T) {
 	// use of any privileged operations.
 	c, err := ethtool.New()
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			t.Skip("skipping, ethtool genetlink not found")
+		}
+
 		t.Fatalf("failed to open client: %v", err)
 	}
 	defer c.Close()
@@ -39,6 +43,10 @@ func TestIntegrationClientLinkInfos(t *testing.T) {
 func TestIntegrationClientNetlinkStrict(t *testing.T) {
 	c, err := ethtool.New()
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			t.Skip("skipping, ethtool genetlink not found")
+		}
+
 		t.Fatalf("failed to open client: %v", err)
 	}
 
