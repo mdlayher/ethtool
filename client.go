@@ -284,5 +284,61 @@ func (c *Client) SetWakeOnLAN(wol WakeOnLAN) error {
 	return c.c.SetWakeOnLAN(wol)
 }
 
+// PrivateFlags is a list of driver-specific flags which are either on or off.
+// These are used to control behavior specific to a specific driver or device
+// for which no generic API exists.
+//
+// The flags which go in here are mostly undocumented other than in kernel
+// source code, you can get the list of supported flags by calling
+// PrivateFlags() and then searching for the returned names in Linux kernel
+// sources.
+//
+// This is technically a bitset but as the bit positions are not stable across
+// kernel versions there is no reason to use that functionality, thus it is not
+// exposed.
+//
+// Note that these flags are in practice not fully covered by Linux's userspace
+// ABI guarantees, it should be expected that a flag can go away.
+type PrivateFlags struct {
+	Interface Interface
+	// Flags is a map of flag names to their active state, i.e. if the flag
+	// is on or off.
+	Flags map[string]bool
+}
+
+// AllPrivateFlags returns Private Flags for each ethtool-supported interface
+// on this system.
+func (c *Client) AllPrivateFlags() ([]*PrivateFlags, error) {
+	return c.c.AllPrivateFlags()
+}
+
+// PrivateFlags returns Private Flags for a single interface. See the type for
+// a more in-depth explanation.
+//
+// If the requested device does not exist or is not supported by the ethtool
+// interface, an error compatible with errors.Is(err, os.ErrNotExist) will be
+// returned.
+func (c *Client) PrivateFlags(ifi Interface) (*PrivateFlags, error) {
+	return c.c.PrivateFlags(ifi)
+}
+
+// SetPrivateFlags attempts to set the given private flags on the given
+// interface. Flags does not need to contain the all flags, those not
+// in it are left as-is.
+//
+// Setting Private Flags requires elevated privileges and if the caller
+// does not have permission, an error compatible with errors.Is(err,
+// os.ErrPermission) will be returned.
+//
+// Note that not all flags can be changed in all interface states, some might
+// only be settable if the interface is down or are only settable once.
+//
+// If the requested device does not exist or is not supported by the ethtool
+// interface, an error compatible with errors.Is(err, os.ErrNotExist) will be
+// returned.
+func (c *Client) SetPrivateFlags(p PrivateFlags) error {
+	return c.c.SetPrivateFlags(p)
+}
+
 // Close cleans up the Client's resources.
 func (c *Client) Close() error { return c.c.Close() }

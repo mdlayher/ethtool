@@ -395,6 +395,134 @@ func (wol WakeOnLAN) encode(ae *netlink.AttributeEncoder) {
 	})
 }
 
+// AllPrivateFlags fetches Private Flags for all ethtool-supported links.
+func (c *client) AllPrivateFlags() ([]*PrivateFlags, error) {
+	return c.privateFlags(netlink.Dump, Interface{})
+}
+
+// PrivateFlags fetches Private Flags for a single interface.
+func (c *client) PrivateFlags(ifi Interface) (*PrivateFlags, error) {
+	fs, err := c.privateFlags(0, ifi)
+	if err != nil {
+		return nil, err
+	}
+	if f := len(fs); f != 1 {
+		panicf("ethtool: unexpected number of PrivateFlags messages for request index: %d, name: %q: %d",
+			ifi.Index, ifi.Name, f)
+	}
+
+	return fs[0], nil
+}
+
+func (c *client) privateFlags(flags netlink.HeaderFlags, ifi Interface) ([]*PrivateFlags, error) {
+	msgs, err := c.get(
+		unix.ETHTOOL_A_PRIVFLAGS_HEADER,
+		unix.ETHTOOL_MSG_PRIVFLAGS_GET,
+		flags,
+		ifi,
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return parsePrivateFlags(msgs)
+}
+
+func (c *client) SetPrivateFlags(pf PrivateFlags) error {
+	_, err := c.get(
+		unix.ETHTOOL_A_WOL_HEADER,
+		unix.ETHTOOL_MSG_PRIVFLAGS_SET,
+		netlink.Acknowledge,
+		pf.Interface,
+		pf.encode,
+	)
+	return err
+}
+
+// parsePrivateFlags parses PrivateFlag structures from a slice of generic netlink
+// messages.
+func parsePrivateFlags(msgs []genetlink.Message) ([]*PrivateFlags, error) {
+	wols := make([]*PrivateFlags, 0, len(msgs))
+	for _, m := range msgs {
+		ad, err := netlink.NewAttributeDecoder(m.Data)
+		if err != nil {
+			return nil, err
+		}
+
+		var privFlags PrivateFlags
+		for ad.Next() {
+			switch ad.Type() {
+			case unix.ETHTOOL_A_PRIVFLAGS_HEADER:
+				ad.Nested(parseInterface(&privFlags.Interface))
+			case unix.ETHTOOL_A_PRIVFLAGS_FLAGS:
+				ad.Nested(parsePrivateFlagBitset(&privFlags.Flags))
+			}
+		}
+
+		if err := ad.Err(); err != nil {
+			return nil, err
+		}
+
+		wols = append(wols, &privFlags)
+	}
+
+	return wols, nil
+}
+
+func parsePrivateFlagBitset(p *map[string]bool) func(*netlink.AttributeDecoder) error {
+	return func(ad *netlink.AttributeDecoder) error {
+		flags := make(map[string]bool)
+		for ad.Next() {
+			switch ad.Type() {
+			case unix.ETHTOOL_A_BITSET_BITS:
+				ad.Nested(func(nad *netlink.AttributeDecoder) error {
+					for nad.Next() {
+						switch nad.Type() {
+						case unix.ETHTOOL_A_BITSET_BITS_BIT:
+							nad.Nested(func(nnad *netlink.AttributeDecoder) error {
+								var name string
+								var active bool
+								for nnad.Next() {
+									switch nnad.Type() {
+									case unix.ETHTOOL_A_BITSET_BIT_NAME:
+										name = nnad.String()
+									case unix.ETHTOOL_A_BITSET_BIT_VALUE:
+										active = true
+									}
+								}
+								flags[name] = active
+								return nnad.Err()
+							})
+						}
+					}
+					return nad.Err()
+				})
+			}
+		}
+		*p = flags
+		return ad.Err()
+	}
+}
+
+// encode packs PrivateFlags data into the appropriate netlink attributes for the
+// encoder.
+func (pf *PrivateFlags) encode(ae *netlink.AttributeEncoder) {
+	ae.Nested(unix.ETHTOOL_A_PRIVFLAGS_FLAGS, func(nae *netlink.AttributeEncoder) error {
+		nae.Nested(unix.ETHTOOL_A_BITSET_BITS, func(nnae *netlink.AttributeEncoder) error {
+			for name, active := range pf.Flags {
+				nnae.Nested(unix.ETHTOOL_A_BITSET_BITS_BIT, func(nnnae *netlink.AttributeEncoder) error {
+					nnnae.String(unix.ETHTOOL_A_BITSET_BIT_NAME, name)
+					nnnae.Flag(unix.ETHTOOL_A_BITSET_BIT_VALUE, active)
+					return nil
+				})
+			}
+			return nil
+		})
+		return nil
+	})
+}
+
 // get performs a request/response interaction with ethtool netlink.
 func (c *client) get(
 	header uint16,
@@ -433,7 +561,9 @@ func (c *client) get(
 		// since the ethtool multicast group notifications require the compact
 		// format, so we might as well always use it.
 		if cmd != unix.ETHTOOL_MSG_FEC_SET &&
-			cmd != unix.ETHTOOL_MSG_WOL_SET {
+			cmd != unix.ETHTOOL_MSG_WOL_SET &&
+			cmd != unix.ETHTOOL_MSG_PRIVFLAGS_GET &&
+			cmd != unix.ETHTOOL_MSG_PRIVFLAGS_SET {
 			nae.Uint32(unix.ETHTOOL_A_HEADER_FLAGS, unix.ETHTOOL_FLAG_COMPACT_BITSETS)
 		}
 
