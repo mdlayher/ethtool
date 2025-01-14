@@ -2,6 +2,7 @@ package ethtool
 
 import (
 	"fmt"
+	"math/big"
 )
 
 //go:generate stringer -type=Duplex,Port -output=string.go
@@ -161,6 +162,7 @@ type LinkModeUpdate struct {
 	SpeedMegabits *int
 	Duplex        *Duplex
 	Autoneg       *Autoneg
+	Advertise     *big.Int
 }
 
 // UpdateLinkMode updates the given Interface with the non-nil link mode properties in

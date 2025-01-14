@@ -4,11 +4,14 @@
 package ethtool
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
+	"github.com/josharian/native"
 	"github.com/mdlayher/genetlink"
 	"github.com/mdlayher/netlink"
 	"golang.org/x/sys/unix"
@@ -151,6 +154,9 @@ func (c *client) linkMode(flags netlink.HeaderFlags, ifi Interface) ([]*LinkMode
 // UpdateLinkMode updates the given Interface with the non-nil link mode properties in
 // the LinkModeUpdate.
 func (c *client) UpdateLinkMode(ifi Interface, lmu *LinkModeUpdate) error {
+	if lmu.Advertise != nil && lmu.Advertise.Sign() < 0 {
+		return errors.New("ethtool: can't update link mode, Advertise is invalid")
+	}
 	_, err := c.get(
 		unix.ETHTOOL_A_LINKMODES_HEADER,
 		unix.ETHTOOL_MSG_LINKMODES_SET,
@@ -172,6 +178,21 @@ func (lmu *LinkModeUpdate) encode(ae *netlink.AttributeEncoder) {
 	}
 	if lmu.Autoneg != nil {
 		ae.Uint8(unix.ETHTOOL_A_LINKMODES_AUTONEG, uint8(*lmu.Autoneg))
+	}
+	if lmu.Advertise != nil {
+		ae.Nested(unix.ETHTOOL_A_LINKMODES_OURS, func(nae *netlink.AttributeEncoder) error {
+			nae.Flag(unix.ETHTOOL_A_BITSET_NOMASK, true)
+			bitlen := lmu.Advertise.BitLen()
+			nae.Uint32(unix.ETHTOOL_A_BITSET_SIZE, uint32(bitlen))
+			b := make([]byte, ((bitlen+31)/32)*4)
+			b = lmu.Advertise.FillBytes(b)
+			if binary.ByteOrder(native.Endian) == binary.LittleEndian {
+				// FillBytes is big endian, reverse bytes for host order
+				slices.Reverse(b)
+			}
+			nae.Bytes(unix.ETHTOOL_A_BITSET_VALUE, b)
+			return nil
+		})
 	}
 }
 
