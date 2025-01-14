@@ -148,6 +148,33 @@ func (c *client) linkMode(flags netlink.HeaderFlags, ifi Interface) ([]*LinkMode
 	return parseLinkModes(msgs)
 }
 
+// UpdateLinkMode updates the given Interface with the non-nil link mode properties in
+// the LinkModeUpdate.
+func (c *client) UpdateLinkMode(ifi Interface, lmu *LinkModeUpdate) error {
+	_, err := c.get(
+		unix.ETHTOOL_A_LINKMODES_HEADER,
+		unix.ETHTOOL_MSG_LINKMODES_SET,
+		netlink.Acknowledge,
+		ifi,
+		lmu.encode,
+	)
+	return err
+}
+
+// encode packs LinkModeUpdate data into the appropriate netlink attributes for the
+// encoder.
+func (lmu *LinkModeUpdate) encode(ae *netlink.AttributeEncoder) {
+	if lmu.SpeedMegabits != nil {
+		ae.Uint32(unix.ETHTOOL_A_LINKMODES_SPEED, uint32(*lmu.SpeedMegabits))
+	}
+	if lmu.Duplex != nil {
+		ae.Uint8(unix.ETHTOOL_A_LINKMODES_DUPLEX, uint8(*lmu.Duplex))
+	}
+	if lmu.Autoneg != nil {
+		ae.Uint8(unix.ETHTOOL_A_LINKMODES_AUTONEG, uint8(*lmu.Autoneg))
+	}
+}
+
 // LinkStates fetches link state data for all ethtool-supported links.
 func (c *client) LinkStates() ([]*LinkState, error) {
 	return c.linkState(netlink.Dump, Interface{})

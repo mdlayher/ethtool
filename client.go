@@ -155,6 +155,20 @@ func (c *Client) LinkMode(ifi Interface) (*LinkMode, error) {
 	return c.c.LinkMode(ifi)
 }
 
+// LinkModeUpdate represents the properties of an interface link to be updated.
+// Only non-nil values will be modified.
+type LinkModeUpdate struct {
+	SpeedMegabits *int
+	Duplex        *Duplex
+	Autoneg       *Autoneg
+}
+
+// UpdateLinkMode updates the given Interface with the non-nil link mode properties in
+// the LinkModeUpdate.
+func (c *Client) UpdateLinkMode(ifi Interface, lmu *LinkModeUpdate) error {
+	return c.c.UpdateLinkMode(ifi, lmu)
+}
+
 // LinkState contains link state information for an Ethernet interface.
 type LinkState struct {
 	Interface Interface
