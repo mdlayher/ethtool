@@ -687,6 +687,8 @@ func parseLinkModes(msgs []genetlink.Message) ([]*LinkMode, error) {
 				lm.SpeedMegabits = int(ad.Uint32())
 			case unix.ETHTOOL_A_LINKMODES_DUPLEX:
 				lm.Duplex = Duplex(ad.Uint8())
+			case unix.ETHTOOL_A_LINKMODES_AUTONEG:
+				lm.Autoneg = Autoneg(ad.Uint8())
 			}
 		}
 

@@ -99,6 +99,7 @@ type LinkMode struct {
 	SpeedMegabits int
 	Ours, Peer    []AdvertisedLinkMode
 	Duplex        Duplex
+	Autoneg       Autoneg
 }
 
 // A Duplex is the link duplex type for a LinkMode structure.
@@ -110,6 +111,27 @@ const (
 	Full    Duplex = 0x01
 	Unknown Duplex = 0xff
 )
+
+// Autoneg is the auto-negotiation status for a link.
+type Autoneg uint8
+
+// Possible Autoneg type values.
+const (
+	AutonegOff Autoneg = 0x00
+	AutonegOn  Autoneg = 0x01
+)
+
+// String implements fmt.Stringer.
+func (a Autoneg) String() string {
+	switch a {
+	case AutonegOff:
+		return "Off"
+	case AutonegOn:
+		return "On"
+	default:
+		return "Invalid"
+	}
+}
 
 // An AdvertisedLinkMode is a link mode that an interface advertises it is
 // capable of using.
