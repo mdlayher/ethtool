@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 
 	"github.com/josharian/native"
@@ -188,7 +187,9 @@ func (lmu *LinkModeUpdate) encode(ae *netlink.AttributeEncoder) {
 			b = lmu.Advertise.FillBytes(b)
 			if binary.ByteOrder(native.Endian) == binary.LittleEndian {
 				// FillBytes is big endian, reverse bytes for host order
-				slices.Reverse(b)
+				for i, j := 0, len(b)-1; i < j; i, j = i+1, j-1 {
+					b[i], b[j] = b[j], b[i]
+				}
 			}
 			nae.Bytes(unix.ETHTOOL_A_BITSET_VALUE, b)
 			return nil
