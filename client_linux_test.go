@@ -256,7 +256,8 @@ func TestLinuxClientLinkModes(t *testing.T) {
 							Name:  "1000baseT/Full",
 						},
 					},
-					Duplex: Half,
+					Duplex:  Half,
+					Autoneg: AutonegOff,
 				},
 				{
 					Interface: Interface{
@@ -274,7 +275,8 @@ func TestLinuxClientLinkModes(t *testing.T) {
 							Name:  "10000baseT/Full",
 						},
 					},
-					Duplex: Full,
+					Duplex:  Full,
+					Autoneg: AutonegOn,
 				},
 			},
 		},
@@ -790,6 +792,7 @@ func encodeLinkMode(t *testing.T, lm LinkMode) genetlink.Message {
 			packALMs(unix.ETHTOOL_A_LINKMODES_PEER, lm.Peer)
 
 			ae.Uint8(unix.ETHTOOL_A_LINKMODES_DUPLEX, uint8(lm.Duplex))
+			ae.Uint8(unix.ETHTOOL_A_LINKMODES_AUTONEG, uint8(lm.Autoneg))
 		}),
 	}
 }
