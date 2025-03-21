@@ -1,13 +1,13 @@
 module github.com/mdlayher/ethtool
 
-go 1.21.0
+go 1.23.0
 
 require (
 	github.com/google/go-cmp v0.7.0
 	github.com/josharian/native v1.1.0
 	github.com/mdlayher/genetlink v1.3.2
 	github.com/mdlayher/netlink v1.7.2
-	golang.org/x/sys v0.22.0
+	golang.org/x/sys v0.31.0
 )
 
 require (
