@@ -2,6 +2,7 @@ package ethtool
 
 import (
 	"fmt"
+	"math/big"
 )
 
 //go:generate stringer -type=Duplex,Port -output=string.go
@@ -99,6 +100,7 @@ type LinkMode struct {
 	SpeedMegabits int
 	Ours, Peer    []AdvertisedLinkMode
 	Duplex        Duplex
+	Autoneg       Autoneg
 }
 
 // A Duplex is the link duplex type for a LinkMode structure.
@@ -110,6 +112,27 @@ const (
 	Full    Duplex = 0x01
 	Unknown Duplex = 0xff
 )
+
+// Autoneg is the auto-negotiation status for a link.
+type Autoneg uint8
+
+// Possible Autoneg type values.
+const (
+	AutonegOff Autoneg = 0x00
+	AutonegOn  Autoneg = 0x01
+)
+
+// String implements fmt.Stringer.
+func (a Autoneg) String() string {
+	switch a {
+	case AutonegOff:
+		return "Off"
+	case AutonegOn:
+		return "On"
+	default:
+		return "Invalid"
+	}
+}
 
 // An AdvertisedLinkMode is a link mode that an interface advertises it is
 // capable of using.
@@ -131,6 +154,21 @@ func (c *Client) LinkModes() ([]*LinkMode, error) {
 // returned.
 func (c *Client) LinkMode(ifi Interface) (*LinkMode, error) {
 	return c.c.LinkMode(ifi)
+}
+
+// LinkModeUpdate represents the properties of an interface link to be updated.
+// Only non-nil values will be modified.
+type LinkModeUpdate struct {
+	SpeedMegabits *int
+	Duplex        *Duplex
+	Autoneg       *Autoneg
+	Advertise     *big.Int
+}
+
+// UpdateLinkMode updates the given Interface with the non-nil link mode properties in
+// the LinkModeUpdate.
+func (c *Client) UpdateLinkMode(ifi Interface, lmu *LinkModeUpdate) error {
+	return c.c.UpdateLinkMode(ifi, lmu)
 }
 
 // LinkState contains link state information for an Ethernet interface.
