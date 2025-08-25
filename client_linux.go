@@ -4,16 +4,15 @@
 package ethtool
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
 	"slices"
 	"strings"
 
-	"github.com/josharian/native"
 	"github.com/mdlayher/genetlink"
 	"github.com/mdlayher/netlink"
+	"golang.org/x/sys/cpu"
 	"golang.org/x/sys/unix"
 )
 
@@ -186,7 +185,7 @@ func (lmu *LinkModeUpdate) encode(ae *netlink.AttributeEncoder) {
 			nae.Uint32(unix.ETHTOOL_A_BITSET_SIZE, uint32(bitlen))
 			b := make([]byte, ((bitlen+31)/32)*4)
 			b = lmu.Advertise.FillBytes(b)
-			if binary.ByteOrder(native.Endian) == binary.LittleEndian {
+			if !cpu.IsBigEndian {
 				// FillBytes is big endian, reverse bytes for host order
 				slices.Reverse(b)
 			}

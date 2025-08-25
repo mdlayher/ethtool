@@ -4,16 +4,15 @@
 package ethtool
 
 import (
-	"encoding/binary"
 	"os"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/josharian/native"
 	"github.com/mdlayher/genetlink"
 	"github.com/mdlayher/genetlink/genltest"
 	"github.com/mdlayher/netlink"
+	"golang.org/x/sys/cpu"
 	"golang.org/x/sys/unix"
 )
 
@@ -1029,7 +1028,7 @@ func TestSetPrivateFlags(t *testing.T) {
 func skipBigEndian(t *testing.T) {
 	t.Helper()
 
-	if binary.ByteOrder(native.Endian) == binary.BigEndian {
+	if cpu.IsBigEndian {
 		t.Skip("skipping, this test requires a little endian machine")
 	}
 }
