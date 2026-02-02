@@ -6,7 +6,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/mdlayher/genetlink v1.3.2
 	github.com/mdlayher/netlink v1.8.0
-	golang.org/x/sys v0.37.0
+	golang.org/x/sys v0.40.0
 )
 
 require (
