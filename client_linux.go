@@ -323,9 +323,9 @@ func (fec FEC) encode(ae *netlink.AttributeEncoder) {
 // Supported returns the supported/configured FEC modes. Some drivers report
 // supported, others configured. See
 // https://kernel.googlesource.com/pub/scm/network/ethtool/ethtool/+/2b3ddcb35357ae34ed0a6ae2bb006dcdaec353a9
-func (f *FEC) Supported() FECModes {
-	result := f.Modes
-	if f.Auto {
+func (fec *FEC) Supported() FECModes {
+	result := fec.Modes
+	if fec.Auto {
 		result |= unix.ETHTOOL_FEC_AUTO
 	}
 	return result
@@ -822,12 +822,12 @@ func parseLinkState(msgs []genetlink.Message) ([]*LinkState, error) {
 
 // TODO: get these into x/sys/unix
 const (
-	_ETHTOOL_A_FEC_UNSPEC = iota
-	_ETHTOOL_A_FEC_HEADER
-	_ETHTOOL_A_FEC_MODES
-	_ETHTOOL_A_FEC_AUTO
-	_ETHTOOL_A_FEC_ACTIVE
-	_ETHTOOL_A_FEC_STATS
+	_ETHTOOL_A_FEC_UNSPEC = iota //nolint:revive
+	_ETHTOOL_A_FEC_HEADER        //nolint:revive
+	_ETHTOOL_A_FEC_MODES         //nolint:revive
+	_ETHTOOL_A_FEC_AUTO          //nolint:revive
+	_ETHTOOL_A_FEC_ACTIVE        //nolint:revive
+	_ETHTOOL_A_FEC_STATS         //nolint:revive
 )
 
 // parseFEC parses FEC structures from a slice of generic netlink
