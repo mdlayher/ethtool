@@ -4,10 +4,10 @@
 package ethtool
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/mdlayher/netlink"
-	"github.com/mdlayher/netlink/nlenc"
 	"golang.org/x/sys/unix"
 )
 
@@ -71,7 +71,7 @@ func (bs *bitset) decode(b []byte) error {
 	}
 
 	for i := 0; i < len(*bs); i++ {
-		(*bs)[i] = nlenc.Uint32(b[i*4 : (i*4)+4])
+		(*bs)[i] = binary.NativeEndian.Uint32(b[i*4 : (i*4)+4])
 	}
 
 	return nil
