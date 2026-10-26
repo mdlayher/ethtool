@@ -185,9 +185,13 @@ func (lmu *LinkModeUpdate) encode(ae *netlink.AttributeEncoder) {
 			nae.Uint32(unix.ETHTOOL_A_BITSET_SIZE, uint32(bitlen))
 			b := make([]byte, ((bitlen+31)/32)*4)
 			b = lmu.Advertise.FillBytes(b)
-			if !cpu.IsBigEndian {
-				// FillBytes is big endian, reverse bytes for host order
-				slices.Reverse(b)
+			// Compact bitmaps put the least significant uint32 first.
+			slices.Reverse(b)
+			if cpu.IsBigEndian {
+				// Each uint32 must still use native byte order.
+				for i := 0; i < len(b); i += 4 {
+					slices.Reverse(b[i : i+4])
+				}
 			}
 			nae.Bytes(unix.ETHTOOL_A_BITSET_VALUE, b)
 			return nil
