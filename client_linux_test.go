@@ -4,6 +4,7 @@
 package ethtool
 
 import (
+	"encoding/binary"
 	"os"
 	"testing"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/mdlayher/genetlink"
 	"github.com/mdlayher/genetlink/genltest"
 	"github.com/mdlayher/netlink"
-	"golang.org/x/sys/cpu"
 	"golang.org/x/sys/unix"
 )
 
@@ -227,11 +227,6 @@ func TestLinuxClientLinkInfo(t *testing.T) {
 }
 
 func TestLinuxClientLinkModes(t *testing.T) {
-	// See https://github.com/mdlayher/ethtool/issues/12.
-	//
-	// It's likely that the bitset code is incorrect on big endian machines.
-	skipBigEndian(t)
-
 	tests := []struct {
 		name string
 		lms  []*LinkMode
@@ -278,6 +273,17 @@ func TestLinuxClientLinkModes(t *testing.T) {
 					Autoneg: AutonegOn,
 				},
 			},
+		},
+		{
+			name: "multiple words",
+			lms: []*LinkMode{{
+				Interface: Interface{Index: 1, Name: "eth0"},
+				Ours: []AdvertisedLinkMode{
+					{Index: unix.ETHTOOL_LINK_MODE_25000baseCR_Full_BIT, Name: "25000baseCR/Full"},
+					{Index: unix.ETHTOOL_LINK_MODE_25000baseKR_Full_BIT, Name: "25000baseKR/Full"},
+					{Index: unix.ETHTOOL_LINK_MODE_200000baseDR4_Full_BIT, Name: "200000baseDR4/Full"},
+				},
+			}},
 		},
 	}
 
@@ -841,9 +847,9 @@ func packALMBitset(alms []AdvertisedLinkMode) func() ([]byte, error) {
 		b := make([]byte, ((len(linkModes)+31)/32)*4)
 
 		for _, alm := range alms {
-			byteIndex := alm.Index / 8
-			bitIndex := alm.Index % 8
-			b[byteIndex] |= 1 << bitIndex
+			word := b[(alm.Index/32)*4:][:4]
+			value := binary.NativeEndian.Uint32(word)
+			binary.NativeEndian.PutUint32(word, value|1<<(alm.Index%32))
 		}
 
 		return b, nil
@@ -946,8 +952,6 @@ func baseClient(t *testing.T, fn genltest.Func) *Client {
 }
 
 func TestFEC(t *testing.T) {
-	skipBigEndian(t)
-
 	// captured from wireshark on the nlmon0 interface when running:
 	//
 	// sudo ethtool --set-fec enp7s0 encoding rs
@@ -959,9 +963,26 @@ func TestFEC(t *testing.T) {
 	// "\x0b\x00\x02\x00\x65\x6e\x70\x37\x73\x30\x00\x00\x18\x00\x02\x80\x04\x00\x01\x00\x10\x00\x03\x80\x0c\x00\x01\x80\x07\x00\x02\x00\x52\x53\x00\x00\x05\x00\x03\x00\x00\x00\x00\x00"], 68, 0, {sa_family=AF_NETLINK, nl_pid=0, nl_groups=00000000}, 12) = 68
 
 	c := testClient(t, clientTest{
-		HeaderFlags:       netlink.Request | netlink.Acknowledge,
-		Command:           unix.ETHTOOL_MSG_FEC_SET,
-		EncodedAttributes: []byte("\x10\x00\x01\x80\x0b\x00\x02\x00\x65\x6e\x70\x37\x73\x30\x00\x00\x18\x00\x02\x80\x04\x00\x01\x00\x10\x00\x03\x80\x0c\x00\x01\x80\x07\x00\x02\x00\x52\x53\x00\x00\x05\x00\x03\x00\x00\x00\x00\x00"),
+		HeaderFlags: netlink.Request | netlink.Acknowledge,
+		Command:     unix.ETHTOOL_MSG_FEC_SET,
+		Attributes: func(ae *netlink.AttributeEncoder) {
+			ae.Nested(_ETHTOOL_A_FEC_HEADER, func(nae *netlink.AttributeEncoder) error {
+				nae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, "enp7s0")
+				return nil
+			})
+			ae.Nested(_ETHTOOL_A_FEC_MODES, func(nae *netlink.AttributeEncoder) error {
+				nae.Flag(unix.ETHTOOL_A_BITSET_NOMASK, true)
+				nae.Nested(unix.ETHTOOL_A_BITSET_BITS, func(nae *netlink.AttributeEncoder) error {
+					nae.Nested(unix.ETHTOOL_A_BITSET_BITS_BIT, func(nae *netlink.AttributeEncoder) error {
+						nae.String(unix.ETHTOOL_A_BITSET_BIT_NAME, "RS")
+						return nil
+					})
+					return nil
+				})
+				return nil
+			})
+			ae.Uint8(_ETHTOOL_A_FEC_AUTO, 0)
+		},
 		Messages: []genetlink.Message{{
 			Data: nil,
 		}},
@@ -980,11 +1001,43 @@ func TestFEC(t *testing.T) {
 func TestPrivateFlags(t *testing.T) {
 	// Reference value captured from ethtool --show-priv-flags eth0
 	c := testClient(t, clientTest{
-		HeaderFlags:       netlink.Request,
-		Command:           unix.ETHTOOL_MSG_PRIVFLAGS_GET,
-		EncodedAttributes: []byte("\x10\x00\x01\x80\x09\x00\x02\x00\x65\x74\x68\x30\x00\x00\x00\x00"),
+		HeaderFlags: netlink.Request,
+		Command:     unix.ETHTOOL_MSG_PRIVFLAGS_GET,
+		Attributes: func(ae *netlink.AttributeEncoder) {
+			ae.Nested(unix.ETHTOOL_A_PRIVFLAGS_HEADER, func(nae *netlink.AttributeEncoder) error {
+				nae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, "eth0")
+				return nil
+			})
+		},
 		Messages: []genetlink.Message{{
-			Data: []byte("\x18\x00\x01\x80\x08\x00\x01\x00\x02\x00\x00\x00\x09\x00\x02\x00\x65\x74\x68\x30\x00\x00\x00\x00\xb4\x01\x02\x80\x08\x00\x02\x00\x0d\x00\x00\x00\xa8\x01\x03\x80\x14\x00\x01\x80\x08\x00\x01\x00\x00\x00\x00\x00\x08\x00\x02\x00\x4d\x46\x50\x00\x24\x00\x01\x80\x08\x00\x01\x00\x01\x00\x00\x00\x18\x00\x02\x00\x74\x6f\x74\x61\x6c\x2d\x70\x6f\x72\x74\x2d\x73\x68\x75\x74\x64\x6f\x77\x6e\x00\x1c\x00\x01\x80\x08\x00\x01\x00\x02\x00\x00\x00\x10\x00\x02\x00\x4c\x69\x6e\x6b\x50\x6f\x6c\x6c\x69\x6e\x67\x00\x28\x00\x01\x80\x08\x00\x01\x00\x03\x00\x00\x00\x16\x00\x02\x00\x66\x6c\x6f\x77\x2d\x64\x69\x72\x65\x63\x74\x6f\x72\x2d\x61\x74\x72\x00\x00\x00\x04\x00\x03\x00\x1c\x00\x01\x80\x08\x00\x01\x00\x04\x00\x00\x00\x0e\x00\x02\x00\x76\x65\x62\x2d\x73\x74\x61\x74\x73\x00\x00\x00\x20\x00\x01\x80\x08\x00\x01\x00\x05\x00\x00\x00\x14\x00\x02\x00\x68\x77\x2d\x61\x74\x72\x2d\x65\x76\x69\x63\x74\x69\x6f\x6e\x00\x24\x00\x01\x80\x08\x00\x01\x00\x06\x00\x00\x00\x17\x00\x02\x00\x6c\x69\x6e\x6b\x2d\x64\x6f\x77\x6e\x2d\x6f\x6e\x2d\x63\x6c\x6f\x73\x65\x00\x00\x1c\x00\x01\x80\x08\x00\x01\x00\x07\x00\x00\x00\x0e\x00\x02\x00\x6c\x65\x67\x61\x63\x79\x2d\x72\x78\x00\x00\x00\x28\x00\x01\x80\x08\x00\x01\x00\x08\x00\x00\x00\x1b\x00\x02\x00\x64\x69\x73\x61\x62\x6c\x65\x2d\x73\x6f\x75\x72\x63\x65\x2d\x70\x72\x75\x6e\x69\x6e\x67\x00\x00\x20\x00\x01\x80\x08\x00\x01\x00\x09\x00\x00\x00\x14\x00\x02\x00\x64\x69\x73\x61\x62\x6c\x65\x2d\x66\x77\x2d\x6c\x6c\x64\x70\x00\x1c\x00\x01\x80\x08\x00\x01\x00\x0a\x00\x00\x00\x0b\x00\x02\x00\x72\x73\x2d\x66\x65\x63\x00\x00\x04\x00\x03\x00\x20\x00\x01\x80\x08\x00\x01\x00\x0b\x00\x00\x00\x0f\x00\x02\x00\x62\x61\x73\x65\x2d\x72\x2d\x66\x65\x63\x00\x00\x04\x00\x03\x00\x28\x00\x01\x80\x08\x00\x01\x00\x0c\x00\x00\x00\x1c\x00\x02\x00\x76\x66\x2d\x74\x72\x75\x65\x2d\x70\x72\x6f\x6d\x69\x73\x63\x2d\x73\x75\x70\x70\x6f\x72\x74\x00"),
+			Data: encode(t, func(ae *netlink.AttributeEncoder) {
+				ae.Nested(unix.ETHTOOL_A_PRIVFLAGS_HEADER, func(nae *netlink.AttributeEncoder) error {
+					nae.Uint32(unix.ETHTOOL_A_HEADER_DEV_INDEX, 2)
+					nae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, "eth0")
+					return nil
+				})
+				ae.Nested(unix.ETHTOOL_A_PRIVFLAGS_FLAGS, func(nae *netlink.AttributeEncoder) error {
+					names := []string{
+						"MFP", "total-port-shutdown", "LinkPolling", "flow-director-atr",
+						"veb-stats", "hw-atr-eviction", "link-down-on-close", "legacy-rx",
+						"disable-source-pruning", "disable-fw-lldp", "rs-fec", "base-r-fec",
+						"vf-true-promisc-support",
+					}
+					nae.Uint32(unix.ETHTOOL_A_BITSET_SIZE, uint32(len(names)))
+					nae.Nested(unix.ETHTOOL_A_BITSET_BITS, func(nae *netlink.AttributeEncoder) error {
+						for i, name := range names {
+							nae.Nested(unix.ETHTOOL_A_BITSET_BITS_BIT, func(nae *netlink.AttributeEncoder) error {
+								nae.Uint32(unix.ETHTOOL_A_BITSET_BIT_INDEX, uint32(i))
+								nae.String(unix.ETHTOOL_A_BITSET_BIT_NAME, name)
+								nae.Flag(unix.ETHTOOL_A_BITSET_BIT_VALUE, i == 3 || i == 10 || i == 11)
+								return nil
+							})
+						}
+						return nil
+					})
+					return nil
+				})
+			}),
 		}},
 		Error: nil,
 	})
@@ -1006,9 +1059,25 @@ func TestPrivateFlags(t *testing.T) {
 func TestSetPrivateFlags(t *testing.T) {
 	// Reference value captured from ethtool --set-priv-flags eth0 disable-fw-lldp on
 	c := testClient(t, clientTest{
-		HeaderFlags:       netlink.Request | netlink.Acknowledge,
-		Command:           unix.ETHTOOL_MSG_PRIVFLAGS_SET,
-		EncodedAttributes: []byte("\x10\x00\x01\x80\x09\x00\x02\x00\x65\x74\x68\x30\x00\x00\x00\x00\x24\x00\x02\x80\x20\x00\x03\x80\x1c\x00\x01\x80\x14\x00\x02\x00\x64\x69\x73\x61\x62\x6c\x65\x2d\x66\x77\x2d\x6c\x6c\x64\x70\x00\x04\x00\x03\x00"),
+		HeaderFlags: netlink.Request | netlink.Acknowledge,
+		Command:     unix.ETHTOOL_MSG_PRIVFLAGS_SET,
+		Attributes: func(ae *netlink.AttributeEncoder) {
+			ae.Nested(unix.ETHTOOL_A_PRIVFLAGS_HEADER, func(nae *netlink.AttributeEncoder) error {
+				nae.String(unix.ETHTOOL_A_HEADER_DEV_NAME, "eth0")
+				return nil
+			})
+			ae.Nested(unix.ETHTOOL_A_PRIVFLAGS_FLAGS, func(nae *netlink.AttributeEncoder) error {
+				nae.Nested(unix.ETHTOOL_A_BITSET_BITS, func(nae *netlink.AttributeEncoder) error {
+					nae.Nested(unix.ETHTOOL_A_BITSET_BITS_BIT, func(nae *netlink.AttributeEncoder) error {
+						nae.String(unix.ETHTOOL_A_BITSET_BIT_NAME, "disable-fw-lldp")
+						nae.Flag(unix.ETHTOOL_A_BITSET_BIT_VALUE, true)
+						return nil
+					})
+					return nil
+				})
+				return nil
+			})
+		},
 		Messages: []genetlink.Message{{
 			Data: nil,
 		}},
@@ -1022,13 +1091,5 @@ func TestSetPrivateFlags(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("failed to set private flags: %v", err)
-	}
-}
-
-func skipBigEndian(t *testing.T) {
-	t.Helper()
-
-	if cpu.IsBigEndian {
-		t.Skip("skipping, this test requires a little endian machine")
 	}
 }
