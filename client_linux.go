@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 package ethtool
 
@@ -772,7 +771,7 @@ func parseAdvertisedLinkModes(alms *[]AdvertisedLinkMode) func(*netlink.Attribut
 			//
 			// Thanks 0x0f10, c_h_lunde, TheCi, and Wacholderbaer from Twitch
 			// chat for saving me from myself!
-			for j := 0; j < 32; j++ {
+			for j := range 32 {
 				if v&(1<<j) != 0 {
 					m := linkModes[(32*i)+j]
 					*alms = append(*alms, AdvertisedLinkMode{
@@ -977,6 +976,6 @@ func parseInterface(ifi *Interface) func(*netlink.AttributeDecoder) error {
 	}
 }
 
-func panicf(format string, a ...interface{}) {
+func panicf(format string, a ...any) {
 	panic(fmt.Sprintf(format, a...))
 }
