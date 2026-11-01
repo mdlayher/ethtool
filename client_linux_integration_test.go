@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 package ethtool_test
 
@@ -64,8 +63,7 @@ func TestIntegrationClientNetlinkStrict(t *testing.T) {
 	// test, all we really care about is that the kernel produced an error
 	// message regarding a non-existent device. This means that the netlink
 	// Strict option plumbing is working.
-	var nerr *netlink.OpError
-	if !errors.As(eerr, &nerr) {
+	if _, ok := errors.AsType[*netlink.OpError](eerr); !ok {
 		t.Fatalf("expected inner wrapped *netlink.OpError, but got: %T", eerr)
 	}
 	eerr.Err = nil
